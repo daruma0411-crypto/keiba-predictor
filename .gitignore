@@ -1,0 +1,19 @@
+# Data files (large binary/pickle)
+data/*.pkl
+data/*.csv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Models
+models/*.pth
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
