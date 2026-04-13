@@ -41,7 +41,26 @@ FEATURES_V9 = [
 ]
 CAT_FEATURES = ['kisyu_code', 'chokyosi_code', 'banusi_code', 'sire_code']
 
-CLASS_MAP = {'A': 5, 'B': 4, 'C': 4, 'L': 3, 'E': 3}
+# Grade + Class combined mapping
+# grade_cd: A=G1, B=G2, C=G3, L=Listed, E=OP
+# class_cd 1桁目: 0=障害等, 1=2歳, 2=3歳, 3=古馬(4歳以上), 4=3歳以上
+# class_cd 2桁目: 1=OP/重賞, 2=3勝, 3=未勝利/新馬, 4=1勝~2勝
+# ※ grade_cdが空の場合にclass_cdで補完する
+# 8段階スコア: クラス情報を最大限反映
+# NNが高クラス(7,8)をレアとして扱う問題はLayer3ディベートでカバーする
+GRADE_CLASS_SCORE = {
+    'A': 8,   # G1
+    'B': 7,   # G2
+    'C': 6,   # G3
+    'L': 5,   # Listed
+    'E': 4,   # OP特別
+}
+CLASS_CD_SCORE = {
+    '01': 4, '11': 4, '21': 4, '31': 4, '41': 4,  # OP/重賞級
+    '02': 3, '12': 3, '22': 3, '32': 3, '42': 3,  # 3勝クラス
+    '04': 2, '14': 2, '24': 2, '34': 2, '44': 2,  # 2勝クラス
+    '03': 1, '13': 1, '23': 1, '33': 1, '43': 1,  # 1勝/未勝利/新馬
+}
 LONG_STRETCH = {'05', '04'}  # 東京、新潟
 
 
@@ -75,6 +94,7 @@ def add_v9_to_all(feat, df_all, um_data):
 
     # 馬ごとの前走情報をshift()で一括計算
     df_sorted['prev_grade'] = df_sorted.groupby('ketto_num')['grade_cd'].shift(1)
+    df_sorted['prev_class_cd'] = df_sorted.groupby('ketto_num')['class_cd'].shift(1)
     df_sorted['prev_kyori'] = df_sorted.groupby('ketto_num')['kyori'].shift(1)
     df_sorted['cum_prize'] = df_sorted.groupby('ketto_num')['honsyokin'].transform(
         lambda x: x.fillna(0).cumsum().shift(1).fillna(0))
@@ -98,10 +118,24 @@ def add_v9_to_all(feat, df_all, um_data):
     df_sorted['_key'] = df_sorted['race_id'] + '_' + df_sorted['ketto_num']
     feat['_key'] = feat['race_id'] + '_' + feat['ketto_num']
 
-    # prev_race_class
+    # prev_race_class: grade_cd優先、なければclass_cdにフォールバック
+    def map_race_class(row):
+        grade = row.get('prev_grade', '')
+        if pd.notna(grade) and grade in GRADE_CLASS_SCORE:
+            return GRADE_CLASS_SCORE[grade]
+        class_cd = row.get('prev_class_cd', '')
+        if pd.notna(class_cd) and str(class_cd).strip() in CLASS_CD_SCORE:
+            return CLASS_CD_SCORE[str(class_cd).strip()]
+        return 1  # unknown/new horse
+
     prev_grade_map = df_sorted.set_index('_key')['prev_grade'].to_dict()
-    feat['prev_race_class'] = feat['_key'].map(prev_grade_map).map(
-        lambda g: CLASS_MAP.get(g, 1) if pd.notna(g) else 1).astype(float)
+    prev_class_cd_map = df_sorted.set_index('_key')['prev_class_cd'].to_dict()
+    feat['prev_grade_tmp'] = feat['_key'].map(prev_grade_map)
+    feat['prev_class_cd_tmp'] = feat['_key'].map(prev_class_cd_map)
+    feat['prev_race_class'] = feat[['prev_grade_tmp', 'prev_class_cd_tmp']].rename(
+        columns={'prev_grade_tmp': 'prev_grade', 'prev_class_cd_tmp': 'prev_class_cd'}
+    ).apply(map_race_class, axis=1).astype(float)
+    feat.drop(columns=['prev_grade_tmp', 'prev_class_cd_tmp'], inplace=True)
 
     # log_prize_money
     cum_prize_map = df_sorted.set_index('_key')['cum_prize'].to_dict()
@@ -109,6 +143,7 @@ def add_v9_to_all(feat, df_all, um_data):
 
     # prev_dist_diff
     prev_kyori_map = df_sorted.set_index('_key')['prev_kyori'].to_dict()
+    # prev_dist_diff: 1600固定に戻す（C修正はバックテストで干渉するため保留）
     feat['prev_dist_diff'] = feat['_key'].map(prev_kyori_map).fillna(1600)
     feat['prev_dist_diff'] = 1600 - feat['prev_dist_diff']
 
@@ -168,6 +203,7 @@ def add_v9_to_all(feat, df_all, um_data):
             print(f'    {processed}/{total} horses...')
 
     print(f'  Done: {processed} horses')
+    feat['has_long_stretch'] = feat['long_stretch_avg'].notna().astype(int)
     feat.drop(columns=['_key'], inplace=True)
     return feat
 

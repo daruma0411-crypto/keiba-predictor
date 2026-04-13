@@ -23,11 +23,17 @@ FEATURES_V9 = [
     'trainer_win_rate', 'trainer_top3_rate',
     'avg_jyuni_3c', 'avg_jyuni_4c',
     'prev_race_class', 'log_prize_money',
-    'weighted_ema_finish',
+    # weighted_ema_finishは廃止: ema_finish/(class/3)のスケールがprev_race_class値で崩壊する
+    # prev_race_classとema_finishを独立入力し、NNに交互作用を学習させる
     # v9特徴量
     'ema_agari',         # 末脚指標
     'long_stretch_avg',  # 直線長コース着順
     'prev_dist_diff',    # 前走距離差
+    # v9b追加特徴量 (既存キャッシュデータから計算)
+    'avg_jyuni_1c',      # 1角平均通過順
+    'avg_jyuni_2c',      # 2角平均通過順
+    'has_same_dist',     # 同距離実績あり flag
+    'has_long_stretch',  # 直線長コース実績あり flag
 ]
 
 CAT_FEATURES = ['kisyu_code', 'chokyosi_code', 'banusi_code', 'sire_code']

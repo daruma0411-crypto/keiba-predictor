@@ -49,29 +49,54 @@ COURSE_PROFILES = {
         'noise_scale': 0.02,
     },
 
+    # --- 福島 芝1200m ---
+    # 直線292m: JRA最短→逃げ先行が圧倒的有利
+    # 小回り平坦コース→内枠先行が非常に有利
+    # 1200mスプリント→ペース緩みにくく前残り傾向
+    'fukushima_turf_1200': {
+        'name': '福島芝1200m',
+        'straight': 292,
+        'pace_base_per_runner': 0.20,   # スプリントなので逃げ馬数の影響は小さめ
+        'pace_noise': 0.10,             # 1200mはペース安定
+        'style_bonus': {
+            'nige':    +0.12,  # 直線最短→逃げ超有利
+            'senkou':  +0.06,  # 先行も有利
+            'sashi':   -0.04,  # 差しは届きにくい
+            'oikomi':  -0.10,  # 追込は致命的
+        },
+        'gate_bias': {
+            'inner_senkou': -0.030,  # 内枠先行→非常に有利（小回り）
+            'outer_sashi':  +0.025,  # 外枠追込→非常に不利
+            'inner_block':  +0.003,  # 1200mなのでブロックリスク低い
+        },
+        'trouble_rate': 0.06,       # スプリントは出遅れ影響大
+        'trouble_penalty': 0.18,    # 出遅れペナルティ大きめ
+        'noise_scale': 0.025,       # スプリントはバラつきやや大
+    },
+
     # --- 阪神 芝1600m外回り (阪神牝馬S, 桜花賞等) ---
     # 直線473m: 長い→差し追込が届く
     # 外回り→枠順バイアス小さい
-    # 現行桜花賞QMCとほぼ同じ係数
+    # 2026-04-11 ベイズ最適化済 (Optuna 100trials, 桜花賞weight=3.0)
     'hanshin_turf_1600_outer': {
-        'name': '阪神芝1600m外回り',
+        'name': '阪神芝1600m外回り (最適化済)',
         'straight': 473,
-        'pace_base_per_runner': 0.30,
-        'pace_noise': 0.15,
+        'pace_base_per_runner': 0.3674,
+        'pace_noise': 0.1988,
         'style_bonus': {
-            'nige':    +0.06,
-            'senkou':  +0.02,
-            'sashi':   -0.04,
-            'oikomi':  -0.04,  # 桜花賞と同じ。直線長く追込も効く
+            'nige':    +0.0846,
+            'senkou':  +0.0535,
+            'sashi':   +0.0183,  # 最適化で差しペナ消滅→直線473mで差しも届く
+            'oikomi':  -0.0610,
         },
         'gate_bias': {
-            'inner_senkou': -0.010,
-            'outer_sashi':  +0.010,
+            'inner_senkou': -0.00251,
+            'outer_sashi':  -0.00359,  # 最適化で外枠追込ペナ消滅
             'inner_block':  +0.010,
         },
         'trouble_rate': 0.05,
         'trouble_penalty': 0.15,
-        'noise_scale': 0.02,
+        'noise_scale': 0.0475,  # 最適化で波乱許容度UP
     },
 }
 
@@ -81,7 +106,15 @@ COURSE_PROFILES = {
 # ============================================================
 def qmc_sim(preds, race_features=None, course='hanshin_turf_1600_outer', n=100000):
     """
-    コースプロファイルに基づくQMCシミュレーション
+    コースプロファイルに基づくQMCシミュレーション（ペース寄与分離モデル）
+
+    ペースモデル:
+      - 前半ペース: 逃げ馬の頭数と競り合いの激しさで決まる
+      - 後半ペース: 前半ペースの反動（前半速い→後半遅い）
+      - 各馬の消耗: 脚質とペースの関係で個別に計算
+        - 逃げ馬がハイペースを作る → 逃げ馬自身が最も消耗
+        - 先行馬は巻き込まれ度合いで消耗
+        - 差し追込は前半温存、後半で加速
 
     Parameters
     ----------
@@ -118,9 +151,11 @@ def qmc_sim(preds, race_features=None, course='hanshin_turf_1600_outer', n=10000
 
     # --- Sobol列でサンプリング ---
     nn_nige = np.sum(rs <= 1.5)
-    pace_base = (nn_nige - 1.5) * prof['pace_base_per_runner']
+    nn_senkou = np.sum((rs > 1.5) & (rs <= 2.5))
 
-    nd = nh * 4 + 1
+    # 次元: 各馬能力(nh) + 前半ペース(1) + 後半ペース(1) + 逃げ競り(1)
+    #       + 出遅れ(nh) + 包まれ(nh) + 個体ノイズ(nh)
+    nd = nh * 4 + 3
     sampler = qmc.Sobol(d=nd, scramble=True, seed=42)
     np2 = 2 ** int(np.ceil(np.log2(n)))
     sb = sampler.random(np2)[:n]
@@ -131,8 +166,21 @@ def qmc_sim(preds, race_features=None, course='hanshin_turf_1600_outer', n=10000
     ability = mu[np.newaxis, :] + sig[np.newaxis, :] * sn[:, j:j+nh]
     j += nh
 
-    # ペース変動
-    pace = pace_base + prof['pace_noise'] * sn[:, j]
+    # === ペース寄与分離モデル ===
+    # 前半ペース: 逃げ馬の数で基本ペースが決まり、乱数で変動
+    pace_front = (nn_nige - 1.5) * prof['pace_base_per_runner'] + prof['pace_noise'] * sn[:, j]
+    j += 1
+
+    # 逃げ馬同士の競り合い強度 (逃げ2頭以上で発動)
+    rivalry = sn[:, j] * 0.5  # -0.5〜+0.5の範囲で競り合いの激しさが変動
+    j += 1
+    if nn_nige >= 2:
+        rivalry_intensity = np.clip(rivalry, 0, None)  # 正の時だけ競り合い激化
+    else:
+        rivalry_intensity = np.zeros(n)  # 単騎逃げなら競り合いなし
+
+    # 後半ペース: 前半の反動（前半速い→後半で前の馬が止まる）
+    pace_rear = -pace_front * 0.6 + prof['pace_noise'] * 0.5 * sn[:, j]
     j += 1
 
     # 不利乱数
@@ -145,28 +193,60 @@ def qmc_sim(preds, race_features=None, course='hanshin_turf_1600_outer', n=10000
     indiv_noise = sn[:, j:j+nh]
     j += nh
 
-    pace2 = pace[:, np.newaxis]
-
     # --- 脚質分類 ---
     is_nige   = (rs <= 1.5).astype(float)
     is_senkou = ((rs > 1.5) & (rs <= 2.5)).astype(float)
     is_sashi  = ((rs > 2.5) & (rs < 3.5)).astype(float)
     is_oikomi = (rs >= 3.5).astype(float)
 
-    # --- 脚質×ペース補正 ---
+    pf = pace_front[:, np.newaxis]  # (n, 1)
+    pr = pace_rear[:, np.newaxis]
+    ri = rivalry_intensity[:, np.newaxis]
+
     sb_ = prof['style_bonus']
-    ability += pace2 * sb_['nige']   * is_nige[np.newaxis, :]
-    ability += pace2 * sb_['senkou'] * is_senkou[np.newaxis, :]
-    ability += pace2 * sb_['sashi']  * is_sashi[np.newaxis, :]
-    ability += pace2 * sb_['oikomi'] * is_oikomi[np.newaxis, :]
+    straight_ratio = prof['straight'] / 1600.0  # 直線比率（長いほど差しに有利）
+
+    # --- 馬ごとのペース影響（分離モデル） ---
+
+    # 逃げ馬: 前半ペースを作る側 → 自身が最も消耗
+    # ハイペース(pf>0)で逃げると消耗大、スロー(pf<0)なら楽逃げ
+    # 競り合い(ri>0)があるとさらに消耗
+    nige_effect = (
+        pf * sb_['nige']           # ペース効果（旧来）
+        - np.abs(pf) * 0.03 * is_nige[np.newaxis, :]    # 逃げ馬はペースが極端なほど消耗
+        - ri * 0.08 * is_nige[np.newaxis, :]              # 競り合い消耗（逃げ馬のみ）
+    )
+
+    # 先行馬: 逃げ馬のペースに巻き込まれるが、逃げほどではない
+    senkou_effect = (
+        pf * sb_['senkou']
+        - ri * 0.03 * is_senkou[np.newaxis, :]  # 競り合いの巻き込まれ（逃げの半分以下）
+    )
+
+    # 差し馬: 前半は温存、後半で加速
+    # ハイペース(pf>0)→後半(pr<0で前が止まる)→差し有利
+    sashi_effect = (
+        pr * sb_['sashi'] * (-1)    # 後半ペース反動が大きいほど差し有利
+        + pf * 0.02 * straight_ratio * is_sashi[np.newaxis, :]  # ハイペース×直線長→差し有利
+    )
+
+    # 追込馬: 差しよりさらに後半依存
+    oikomi_effect = (
+        pr * sb_['oikomi'] * (-1)
+        + pf * 0.03 * straight_ratio * is_oikomi[np.newaxis, :]
+        - (1 - straight_ratio) * 0.02 * is_oikomi[np.newaxis, :]  # 直線短いと届かない
+    )
+
+    ability += nige_effect * is_nige[np.newaxis, :]
+    ability += senkou_effect * is_senkou[np.newaxis, :]
+    ability += sashi_effect * is_sashi[np.newaxis, :]
+    ability += oikomi_effect * is_oikomi[np.newaxis, :]
 
     # --- 枠順バイアス ---
     gb = prof['gate_bias']
-    # 内枠(1-3)×先行以前 → 有利
     inner_senkou = ((wk <= 3) & (rs <= 2.5)).astype(float)
     ability += gb['inner_senkou'] * inner_senkou[np.newaxis, :]
 
-    # 外枠(6+)×追込 → 不利
     outer_sashi = ((wk >= 6) & (rs >= 3.5)).astype(float)
     ability += gb['outer_sashi'] * outer_sashi[np.newaxis, :]
 

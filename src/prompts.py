@@ -77,6 +77,12 @@ def format_horse_data(mc_results, race_features, nn_preds):
     -------
     str : プロンプトに埋め込むテーブル文字列
     """
+    # 前走クラス数値→名称マッピング
+    CLASS_NAMES = {
+        8: 'G1', 7: 'G2', 6: 'G3', 5: 'Listed', 4: 'OP',
+        3: '3勝', 2: '2勝', 1: '未勝利/1勝',
+    }
+
     lines = []
 
     # ヘッダー
@@ -84,12 +90,12 @@ def format_horse_data(mc_results, race_features, nn_preds):
         f"{'順位':>4s} {'馬番':>4s} {'枠':>2s} {'馬名':18s} "
         f"{'odds':>7s} {'μ':>7s} {'σ':>7s} "
         f"{'勝率':>7s} {'複勝率':>7s} {'E[rank]':>8s} "
-        f"{'EMA着順':>8s} {'タイムZ':>8s} {'末脚EMA':>8s} {'加重EMA':>8s} "
+        f"{'EMA着順':>8s} {'タイムZ':>8s} {'末脚EMA':>8s} "
         f"{'直線適性':>8s} {'同距離':>8s} {'同馬場':>8s} {'距離差':>6s} "
         f"{'脚質':>6s} {'3角位':>6s} {'4角位':>6s} "
         f"{'馬体重':>6s} {'増減':>4s} {'間隔日':>6s} {'走数':>4s} "
         f"{'騎手勝':>7s} {'騎手複':>7s} {'師勝':>7s} {'師複':>7s} "
-        f"{'前走CL':>6s} {'賞金log':>8s} {'勝率実':>7s} {'複勝実':>7s}"
+        f"{'前走CL':>10s} {'賞金log':>8s} {'勝率実':>7s} {'複勝実':>7s}"
     )
     lines.append("-" * 250)
 
@@ -106,17 +112,22 @@ def format_horse_data(mc_results, race_features, nn_preds):
         sd = f"{fd['same_dist_finish']:8.2f}" if pd.notna(fd.get('same_dist_finish')) else '     N/A'
         ss = f"{fd['same_surface_finish']:8.2f}" if pd.notna(fd.get('same_surface_finish')) else '     N/A'
 
+        # 前走クラス名
+        prev_cl = fd['prev_race_class']
+        cl_name = CLASS_NAMES.get(int(prev_cl), f'{int(prev_cl)}')
+        cl_str = f"{int(prev_cl)}({cl_name})"
+
         lines.append(
             f"{rank:4d} {u:4d} {int(fd['wakuban']):2d} {r['horse_name']:18s} "
             f"{r['odds']:7.1f} {ps['mu']:7.4f} {ps['sigma']:7.4f} "
             f"{r['win_prob']:7.2%} {r['top3_prob']:7.2%} {r['expected_rank']:8.2f} "
-            f"{fd['ema_finish']:8.3f} {fd['ema_time_zscore']:8.3f} {fd['ema_agari']:8.3f} {fd['weighted_ema_finish']:8.3f} "
+            f"{fd['ema_finish']:8.3f} {fd['ema_time_zscore']:8.3f} {fd['ema_agari']:8.3f} "
             f"{ls} {sd} {ss} {fd['prev_dist_diff']:6.0f} "
             f"{fd['avg_run_style']:6.2f} {fd['avg_jyuni_3c']:6.2f} {fd['avg_jyuni_4c']:6.2f} "
             f"{fd['bataijyu']:6.0f} {fd['zogen_sa']:4.0f} {fd['interval_days']:6.0f} {fd['past_count']:4.0f} "
             f"{fd['jockey_win_rate']:7.3f} {fd['jockey_top3_rate']:7.3f} "
             f"{fd['trainer_win_rate']:7.3f} {fd['trainer_top3_rate']:7.3f} "
-            f"{fd['prev_race_class']:6.0f} {fd['log_prize_money']:8.3f} "
+            f"{cl_str:>10s} {fd['log_prize_money']:8.3f} "
             f"{fd['win_rate']:7.3f} {fd['top3_rate']:7.3f}"
         )
 

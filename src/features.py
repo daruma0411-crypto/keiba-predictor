@@ -85,6 +85,8 @@ def build_past_race_features(df, n_past=5, ema_alpha=0.3):
         time_zs.append(compute_race_zscore(g, 'time'))
         l3f_zs.append(compute_race_zscore(g, 'haron_time_l3'))
     df['time_zscore'] = pd.concat(time_zs).reindex(df.index)
+    # NOTE: l3f_zscore is effectively dead — haron_time_l3 is always zero in the binary files.
+    # Kept for schema compatibility but values will be uniformly zero.
     df['l3f_zscore'] = pd.concat(l3f_zs).reindex(df.index)
 
     # 脚質推定
@@ -162,6 +164,8 @@ def build_past_race_features(df, n_past=5, ema_alpha=0.3):
     # 初期化
     df['past_count'] = 0
     df['ema_time_zscore'] = np.nan
+    # NOTE: ema_l3f_zscore is dead — source data (haron_time_l3) is always zero in binaries.
+    # Kept in schema for backward compatibility but will remain NaN.
     df['ema_l3f_zscore'] = np.nan
     df['ema_finish'] = np.nan
     df['win_rate'] = np.nan
@@ -208,7 +212,7 @@ def build_past_race_features(df, n_past=5, ema_alpha=0.3):
         df.loc[horse.index, 'interval_days'] = horse['date'].diff().dt.days.values
 
         # 平均通過順位（各コーナー）
-        for corner in ['jyuni_3c', 'jyuni_4c']:
+        for corner in ['jyuni_1c', 'jyuni_2c', 'jyuni_3c', 'jyuni_4c']:
             if corner in horse.columns:
                 vals = horse[corner].replace(0, np.nan).astype(float)
                 cum_avg = vals.shift(1).expanding().mean()
@@ -244,6 +248,7 @@ def build_past_race_features(df, n_past=5, ema_alpha=0.3):
                  'same_dist_finish', 'same_surface_finish', 'interval_days',
                  'jockey_win_rate', 'jockey_top3_rate',
                  'trainer_win_rate', 'trainer_top3_rate',
+                 'avg_jyuni_1c', 'avg_jyuni_2c',
                  'avg_jyuni_3c', 'avg_jyuni_4c']
     feat_df = df[feat_cols].copy()
 
@@ -357,8 +362,11 @@ def build_all_features(df, n_past=5, ema_alpha=0.3):
         'kyori': df_sorted.get('kyori', pd.Series(np.nan, index=df_sorted.index)).values,
         'is_turf': (df_sorted.get('surface', pd.Series('', index=df_sorted.index)) == '芝').astype(int).values,
         'kisyu_code': df_sorted['kisyu_code'].values,
+        'kisyu_name': df_sorted['kisyu_name'].values if 'kisyu_name' in df_sorted.columns else '',
         'chokyosi_code': df_sorted['chokyosi_code'].values,
         'banusi_code': df_sorted['banusi_code'].values,
+        'grade_cd': df_sorted['grade_cd'].values if 'grade_cd' in df_sorted.columns else '',
+        'class_cd': df_sorted['class_cd'].values if 'class_cd' in df_sorted.columns else '',
     })
 
     # 頭数
@@ -373,6 +381,13 @@ def build_all_features(df, n_past=5, ema_alpha=0.3):
 
     # 重複カラムを除去
     result = result.loc[:, ~result.columns.duplicated()]
+
+    # Binary indicators for NaN-heavy features
+    result['has_same_dist'] = result['same_dist_finish'].notna().astype(int)
+    if 'long_stretch_avg' in result.columns:
+        result['has_long_stretch'] = result['long_stretch_avg'].notna().astype(int)
+    else:
+        result['has_long_stretch'] = 0
 
     # 初出走を除外（過去走がない馬は予測できない）
     result = result[result['past_count'] > 0].copy()
@@ -391,7 +406,9 @@ NUMERIC_FEATURES = [
     'same_dist_finish', 'same_surface_finish', 'interval_days',
     'jockey_win_rate', 'jockey_top3_rate',
     'trainer_win_rate', 'trainer_top3_rate',
+    'avg_jyuni_1c', 'avg_jyuni_2c',
     'avg_jyuni_3c', 'avg_jyuni_4c',
+    'has_same_dist',
 ]
 
 # カテゴリ特徴量（Embedding用）

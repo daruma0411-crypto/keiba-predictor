@@ -19,26 +19,46 @@
 
 ## 使い方（パイプライン）
 
+### 標準ワークフロー（推奨）
+
+出馬表CSV 1枚で Layer 1→2→3 を一気通貫で実行する:
+
+```bash
+py -3.13 scripts/predict.py C:/TXT/04112.csv --course fukushima_turf_1200
+```
+
+- 入力: TARGET JVエクスポートの出馬表CSV（1行1馬、cp932、ヘッダなし、33列）
+- `--course` 省略時は場名+芝ダ+距離から自動検出（未定義なら警告付きでデフォルト実行）
+- `--no-debate` で Layer 3 ディベートプロンプトをスキップ可能（非推奨）
+- Layer 3 は必ず実行すること。数値出力だけで止めない
+
+### Python API
+
 ```python
+from src.entry_parser import build_race_features
 from src.predictor import Predictor, FEATURES_V9, CAT_FEATURES
 from src.qmc_courses import qmc_sim
 from src.prompts import build_prompt
 
+feat = pd.read_pickle('data/features_v9b_2026.pkl')
+race_info, rf, missing = build_race_features('C:/TXT/04112.csv', feat)
 pred = Predictor()
 pred.train(train_df, ep=50, lr=0.003, seed=42)
-nn_preds = pred.predict(race_df)
-mc = qmc_sim(nn_preds, race_features=race_df, course='nakayama_turf_1600')
-prompt = build_prompt(race_name=..., mc_results=mc, race_features=race_df, nn_preds=nn_preds, ...)
+nn_preds = pred.predict(rf)
+mc = qmc_sim(nn_preds, race_features=rf, course='fukushima_turf_1200')
+prompt = build_prompt(race_name=..., mc_results=mc, race_features=rf, nn_preds=nn_preds, ...)
 ```
 
 ## 主要ファイル
 
 | ファイル | 役割 |
 |:---|:---|
+| `scripts/predict.py` | **汎用予測スクリプト（推奨エントリーポイント）** CSV1枚でL1→L2→L3一気通貫 |
+| `src/entry_parser.py` | **出馬表CSVパーサー** parse_entry_csv() + build_race_features()。騎手乗り替わり時のkisyu_code逆引き修正付き |
 | `src/predictor.py` | NN定義 + Predictorクラス + 特徴量定義(FEATURES_V9, CAT_FEATURES) |
 | `src/qmc_courses.py` | コース別QMC。COURSE_PROFILES辞書にコースを追加して拡張 |
 | `src/prompts.py` | 議長プロンプトテンプレート + format_horse_data() + build_prompt() |
-| `src/features.py` | v4特徴量構築 (build_all_features) |
+| `src/features.py` | v4特徴量構築 (build_all_features)。kisyu_name, has_same_dist, has_long_stretch含む |
 | `src/binary_parser.py` | TARGET JV バイナリパーサー (load_all_data, load_hanshin_data) |
 | `src/um_parser.py` | 血統データパーサー (load_um_data) |
 | `src/sakura_model.py` | 桜花賞専用ドメインスコア（汎用予測では使わない） |
@@ -70,8 +90,17 @@ prompt = build_prompt(race_name=..., mc_results=mc, race_features=race_df, nn_pr
 
 ## v9b モデル仕様
 
-- 入力: 26数値特徴量 + 4カテゴリ埋め込み(騎手/調教師/馬主/種牡馬)
+- 入力: 30数値特徴量 + 4カテゴリ埋め込み(騎手/調教師/馬主/種牡馬)
 - 構造: Linear(128)→ReLU→Dropout(0.3)→Linear(64)→ReLU→Dropout(0.2)→Linear(32)→ReLU→μ/σ
 - 損失: Gaussian NLL
 - 学習: 芝レース直近20,000件、50epoch、lr=0.003、seed=42
 - バックテスト実績: 馬券内占有率80%（2016-2025桜花賞）
+
+## 変更履歴
+
+### 2026-04-11: 騎手コード修正 + 特徴量追加
+- **entry_parser.py**: 騎手乗り替わり時のkisyu_code修正を実装。特徴量キャッシュにkisyu_nameが含まれていれば、出馬表CSVの騎手名から逆引きしてkisyu_codeを更新する。キャッシュ再構築が必要。
+- **features.py**: build_all_features()のmetaにkisyu_nameを追加。has_long_stretch(直線長コース実績フラグ)を追加。
+- **predictor.py**: FEATURES_V9に4特徴量追加: avg_jyuni_1c, avg_jyuni_2c, has_same_dist, has_long_stretch
+- **binary_parser.py**: class_cdをRAレコードからパース済み（offset 620, 2桁）
+- **注意**: 特徴量キャッシュ(features_v9b_*.pkl)の再構築が必要。kisyu_name列とhas_long_stretch列が追加されるため、既存キャッシュでは騎手コード修正とhas_long_stretch特徴量が機能しない。

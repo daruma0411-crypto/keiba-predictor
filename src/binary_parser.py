@@ -155,6 +155,7 @@ def parse_se_record(rec):
     r['blinker'] = ascii_field(294, 1)
     r['kisyu_code'] = ascii_field(296, 5)
     r['kisyu_name'] = cp932_field(306, 8)
+    r['minarai_cd'] = ascii_field(322, 1)  # 見習い騎手減量
 
     r['bataijyu'] = int_field(324, 3)  # 馬体重
     zogen_fugo = ascii_field(327, 1)
@@ -186,7 +187,19 @@ def parse_se_record(rec):
     r['haron_time_l4'] = float_field_div10(383, 3)
     r['haron_time_l3'] = float_field_div10(386, 3)
 
-    r['time_diff'] = ascii_field(531, 4)
+    # TARGET speed index (offset 389:393)
+    speed_raw = ascii_field(389, 4)
+    try:
+        r['target_speed'] = int(speed_raw) if speed_raw and int(speed_raw) < 999 else None
+    except ValueError:
+        r['target_speed'] = None
+
+    # タイム差 (numeric, 1/10秒単位 → 秒に変換)
+    td_raw = ascii_field(531, 4)
+    try:
+        r['time_diff'] = int(td_raw) / 10.0 if td_raw else None
+    except ValueError:
+        r['time_diff'] = None
 
     # レースIDを生成 (場+回+日+R で一意)
     r['race_id'] = f"{r['race_date']}_{r['place_code']}_{r['kai']:02d}_{r['day']:02d}_{r['race_num']:02d}"
@@ -211,7 +224,7 @@ def parse_ra_record(rec):
     21:23   Kaession
     23:25   Nichiji
     25:27   RaceNum
-    27:29   Heads (頭数)
+    27:29   YoubiCD (曜日コード)
     32:152  Hondai (レース名, cp932 120bytes)
     614     GradeCD ('A'=G1,'B'=G2,'C'=G3,'L'=リステッド,'E'=OP特別)
     697:701 Kyori (距離 4桁)
@@ -272,6 +285,13 @@ def parse_ra_record(rec):
         r['surface'] = '障害'
     else:
         r['surface'] = '芝'
+
+    # 年齢条件 ("12"=3yo+, "14"=4yo+)
+    r['age_limit_cd'] = ascii_field(616, 2)
+    # 性別制限 ("N0"等=牝馬限定, "A0"=混合)
+    r['sex_limit_cd'] = ascii_field(618, 2)
+    # クラスコード ("31"=OP, "33"=1勝, "34"=2勝, "41"=Listed, "42"=G3+)
+    r['class_cd'] = ascii_field(620, 2)
 
     # 1着賞金
     r['prize_1st'] = int_field(713, 4)
@@ -402,7 +422,7 @@ def load_hanshin_data(se_data_dir='C:/SE_DATA', years=range(2015, 2026), place_c
         ra_df = ra_df.drop_duplicates(subset='race_id')
         # SE に RA のレース条件を結合
         ra_cols = ['race_id', 'race_name', 'grade_cd', 'grade', 'kyori', 'surface',
-                   'track_cd_raw', 'prize_1st']
+                   'track_cd_raw', 'prize_1st', 'class_cd', 'age_limit_cd', 'sex_limit_cd']
         se_df = se_df.merge(ra_df[ra_cols], on='race_id', how='left', suffixes=('', '_ra'))
 
     return se_df
