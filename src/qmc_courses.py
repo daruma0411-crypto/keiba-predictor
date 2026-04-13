@@ -49,6 +49,31 @@ COURSE_PROFILES = {
         'noise_scale': 0.02,
     },
 
+    # --- 中山 芝1200m ---
+    # 直線310m: 短い→逃げ先行有利
+    # 内回り急坂→最後の急坂で前が止まることも
+    # スプリント→ペース速い
+    'nakayama_turf_1200': {
+        'name': '中山芝1200m',
+        'straight': 310,
+        'pace_base_per_runner': 0.22,
+        'pace_noise': 0.12,
+        'style_bonus': {
+            'nige':    +0.10,
+            'senkou':  +0.05,
+            'sashi':   -0.03,
+            'oikomi':  -0.08,
+        },
+        'gate_bias': {
+            'inner_senkou': -0.025,
+            'outer_sashi':  +0.020,
+            'inner_block':  +0.005,
+        },
+        'trouble_rate': 0.06,
+        'trouble_penalty': 0.17,
+        'noise_scale': 0.025,
+    },
+
     # --- 福島 芝1200m ---
     # 直線292m: JRA最短→逃げ先行が圧倒的有利
     # 小回り平坦コース→内枠先行が非常に有利
@@ -72,6 +97,31 @@ COURSE_PROFILES = {
         'trouble_rate': 0.06,       # スプリントは出遅れ影響大
         'trouble_penalty': 0.18,    # 出遅れペナルティ大きめ
         'noise_scale': 0.025,       # スプリントはバラつきやや大
+    },
+
+    # --- 阪神 芝2000m内回り (忘れな草賞, 大阪杯等) ---
+    # 直線356m: 中山より長いが東京より短い
+    # 内回り・急坂あり → 先行有利だが差しも届く
+    # 2000mは中距離→ペース読みが重要
+    'hanshin_turf_2000': {
+        'name': '阪神芝2000m内回り',
+        'straight': 356,
+        'pace_base_per_runner': 0.25,
+        'pace_noise': 0.15,
+        'style_bonus': {
+            'nige':    +0.08,
+            'senkou':  +0.04,
+            'sashi':   -0.01,
+            'oikomi':  -0.05,
+        },
+        'gate_bias': {
+            'inner_senkou': -0.020,
+            'outer_sashi':  +0.015,
+            'inner_block':  +0.008,
+        },
+        'trouble_rate': 0.05,
+        'trouble_penalty': 0.15,
+        'noise_scale': 0.02,
     },
 
     # --- 阪神 芝1600m外回り (阪神牝馬S, 桜花賞等) ---
