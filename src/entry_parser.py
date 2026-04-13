@@ -239,9 +239,12 @@ def build_race_features(csv_path, feat_cache, prev_race_csv=None):
             old_ema = latest_row.get('ema_finish', latest_finish)
             row['ema_finish'] = alpha * latest_finish + (1 - alpha) * old_ema
 
-            # ema_time_zscore: 同様
-            # (time_zscoreはレース内標準化値。最新レースのzscoreはキャッシュにない
-            #  ため近似として前回値を維持)
+            # ema_time_diff: 着差タイムEMAを更新（time_diffがキャッシュにあれば）
+            if 'ema_time_diff' in latest_row.index and 'time_diff' in latest_row.index:
+                old_td = latest_row.get('ema_time_diff', 0)
+                latest_td = latest_row.get('time_diff', 0)
+                if pd.notna(old_td) and pd.notna(latest_td):
+                    row['ema_time_diff'] = alpha * latest_td + (1 - alpha) * old_td
 
             # win_rate / top3_rate: 累積率を更新
             old_wins = latest_row.get('win_rate', 0) * latest_pc

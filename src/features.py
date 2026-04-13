@@ -168,6 +168,7 @@ def build_past_race_features(df, n_past=5, ema_alpha=0.3):
     # Kept in schema for backward compatibility but will remain NaN.
     df['ema_l3f_zscore'] = np.nan
     df['ema_finish'] = np.nan
+    df['ema_time_diff'] = np.nan  # 着差タイムEMA（小さいほど勝ち馬に近い）
     df['win_rate'] = np.nan
     df['top3_rate'] = np.nan
     df['avg_run_style'] = np.nan
@@ -194,6 +195,11 @@ def build_past_race_features(df, n_past=5, ema_alpha=0.3):
             horse['time_zscore'], ema_alpha, n_past).values
         df.loc[horse.index, 'ema_finish'] = rolling_ema(
             horse['kakutei_jyuni'].astype(float), ema_alpha, n_past).values
+
+        # 着差タイムEMA（time_diffがあれば）
+        if 'time_diff' in horse.columns:
+            td = horse['time_diff'].astype(float)
+            df.loc[horse.index, 'ema_time_diff'] = rolling_ema(td, ema_alpha, n_past).values
 
         # 勝率・複勝率（累積、自分を含まない）
         wins = (horse['kakutei_jyuni'] == 1).astype(float)
@@ -244,6 +250,7 @@ def build_past_race_features(df, n_past=5, ema_alpha=0.3):
 
     # past_featとして返す（build_all_featuresとの互換性のため）
     feat_cols = ['past_count', 'ema_time_zscore', 'ema_l3f_zscore', 'ema_finish',
+                 'ema_time_diff',
                  'win_rate', 'top3_rate', 'avg_run_style',
                  'same_dist_finish', 'same_surface_finish', 'interval_days',
                  'jockey_win_rate', 'jockey_top3_rate',

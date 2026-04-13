@@ -16,7 +16,7 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 # ============================================================
 FEATURES_V9 = [
     'wakuban', 'futan', 'bataijyu', 'zogen_sa', 'heads',
-    'past_count', 'ema_time_zscore', 'ema_finish',
+    'past_count', 'ema_time_zscore', 'ema_finish', 'ema_time_diff',
     'win_rate', 'top3_rate', 'avg_run_style',
     'same_dist_finish', 'same_surface_finish', 'interval_days',
     'jockey_win_rate', 'jockey_top3_rate',
