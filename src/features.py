@@ -151,6 +151,62 @@ def build_past_race_features(df, n_past=5, ema_alpha=0.3):
         df[f'{role}_win_rate'] = pd.Series(win_rates, index=df_sorted.index).reindex(df.index)
         df[f'{role}_top3_rate'] = pd.Series(top3_rates, index=df_sorted.index).reindex(df.index)
 
+    # === 騎手・調教師の距離帯別成績 ===
+    # 距離帯: sprint(~1400), mile(1401-1800), inter(1801-2200), long(2201~)
+    def get_dist_band(kyori):
+        if pd.isna(kyori) or kyori <= 0:
+            return 'unknown'
+        if kyori <= 1400:
+            return 'sprint'
+        elif kyori <= 1800:
+            return 'mile'
+        elif kyori <= 2200:
+            return 'inter'
+        else:
+            return 'long'
+
+    df_sorted['_dist_band'] = df_sorted['kyori'].apply(get_dist_band) if 'kyori' in df_sorted.columns else 'unknown'
+
+    for role, code_col in [('jockey', 'kisyu_code'), ('trainer', 'chokyosi_code')]:
+        if code_col not in df.columns:
+            df[f'{role}_dist_win_rate'] = np.nan
+            df[f'{role}_dist_top3_rate'] = np.nan
+            continue
+
+        # key = (code, dist_band) → [total, wins, top3s]
+        dist_stats = {}
+        dist_win_rates = np.full(len(df_sorted), np.nan)
+        dist_top3_rates = np.full(len(df_sorted), np.nan)
+
+        for i, (idx, row) in enumerate(df_sorted.iterrows()):
+            code = row.get(code_col)
+            band = row.get('_dist_band', 'unknown')
+            if pd.isna(code) or code == '' or code == '0':
+                continue
+
+            key = (code, band)
+            if key in dist_stats:
+                total, wins, top3s = dist_stats[key]
+                if total > 0:
+                    pos = df_sorted.index.get_loc(idx)
+                    dist_win_rates[pos] = wins / total
+                    dist_top3_rates[pos] = top3s / total
+
+            finish = row.get('kakutei_jyuni')
+            if pd.notna(finish) and finish > 0:
+                if key not in dist_stats:
+                    dist_stats[key] = [0, 0, 0]
+                dist_stats[key][0] += 1
+                if finish == 1:
+                    dist_stats[key][1] += 1
+                if finish <= 3:
+                    dist_stats[key][2] += 1
+
+        df[f'{role}_dist_win_rate'] = pd.Series(dist_win_rates, index=df_sorted.index).reindex(df.index)
+        df[f'{role}_dist_top3_rate'] = pd.Series(dist_top3_rates, index=df_sorted.index).reindex(df.index)
+
+    df_sorted.drop(columns=['_dist_band'], inplace=True, errors='ignore')
+
     # === 通過順位の詳細 ===
     for corner in ['jyuni_1c', 'jyuni_2c', 'jyuni_3c', 'jyuni_4c']:
         if corner in df.columns:
@@ -254,7 +310,9 @@ def build_past_race_features(df, n_past=5, ema_alpha=0.3):
                  'win_rate', 'top3_rate', 'avg_run_style',
                  'same_dist_finish', 'same_surface_finish', 'interval_days',
                  'jockey_win_rate', 'jockey_top3_rate',
+                 'jockey_dist_win_rate', 'jockey_dist_top3_rate',
                  'trainer_win_rate', 'trainer_top3_rate',
+                 'trainer_dist_win_rate', 'trainer_dist_top3_rate',
                  'avg_jyuni_1c', 'avg_jyuni_2c',
                  'avg_jyuni_3c', 'avg_jyuni_4c']
     feat_df = df[feat_cols].copy()

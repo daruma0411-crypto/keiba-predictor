@@ -20,7 +20,9 @@ FEATURES_V9 = [
     'win_rate', 'top3_rate', 'avg_run_style',
     'same_dist_finish', 'same_surface_finish', 'interval_days',
     'jockey_win_rate', 'jockey_top3_rate',
+    'jockey_dist_win_rate', 'jockey_dist_top3_rate',
     'trainer_win_rate', 'trainer_top3_rate',
+    'trainer_dist_win_rate', 'trainer_dist_top3_rate',
     'avg_jyuni_3c', 'avg_jyuni_4c',
     'prev_race_class', 'log_prize_money',
     # weighted_ema_finishは廃止: ema_finish/(class/3)のスケールがprev_race_class値で崩壊する
