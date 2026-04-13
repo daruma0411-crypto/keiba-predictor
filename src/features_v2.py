@@ -382,7 +382,7 @@ FEATURES_V2 = [
     'win_rate', 'top3_rate',
 ]
 
-CAT_FEATURES_V2 = ['kisyu_code', 'chokyosi_code', 'banusi_name', 'sire']
+CAT_FEATURES_V2 = ['kisyu_code', 'chokyosi_code', 'sire_type']
 
 
 if __name__ == '__main__':

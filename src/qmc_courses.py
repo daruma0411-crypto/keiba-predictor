@@ -74,6 +74,58 @@ COURSE_PROFILES = {
         'noise_scale': 0.025,
     },
 
+    # --- 福島 芝2600m (Aコース) ---
+    # 約1周半、コーナー6回。直線292m(A)
+    # 前半2Fはポジション争いで速い→その後ペース緩む→3角手前からピッチ上昇
+    # スタミナ比べ。隊列が激しく動く
+    # 逃げ先行有利だが差しも早仕掛けで出番あり。マクリも有効
+    # 枠順はほぼフラット（頭数揃いにくい）
+    # ローカル実績重要。中央場所で負けていても巻き返せる
+    'fukushima_turf_2600': {
+        'name': '福島芝2600m',
+        'straight': 292,
+        'pace_base_per_runner': 0.18,   # 前半速い→中盤緩む→後半上がる独特のペース
+        'pace_noise': 0.18,            # ペース変動大（淡々と流れたり急に動いたり）
+        'style_bonus': {
+            'nige':    +0.06,  # 逃げ先行有利だが長距離なので1200mほどではない
+            'senkou':  +0.04,
+            'sashi':   +0.00,  # 差しも早仕掛けで出番あり
+            'oikomi':  -0.04,  # 追込は6コーナーで不利
+        },
+        'gate_bias': {
+            'inner_senkou': -0.005,  # 枠順ほぼフラット
+            'outer_sashi':  +0.005,
+            'inner_block':  +0.003,
+        },
+        'trouble_rate': 0.06,       # コーナー6回で不利発生しやすい
+        'trouble_penalty': 0.15,
+        'noise_scale': 0.025,       # スタミナ比べで波乱あり
+    },
+
+    # --- 福島 芝2000m ---
+    # 直線292m: JRA最短→逃げ先行有利
+    # 小回り平坦コース、2000mは1周+αで前有利
+    'fukushima_turf_2000': {
+        'name': '福島芝2000m',
+        'straight': 292,
+        'pace_base_per_runner': 0.25,
+        'pace_noise': 0.13,
+        'style_bonus': {
+            'nige':    +0.09,
+            'senkou':  +0.05,
+            'sashi':   -0.02,
+            'oikomi':  -0.07,
+        },
+        'gate_bias': {
+            'inner_senkou': -0.022,
+            'outer_sashi':  +0.018,
+            'inner_block':  +0.006,
+        },
+        'trouble_rate': 0.05,
+        'trouble_penalty': 0.15,
+        'noise_scale': 0.02,
+    },
+
     # --- 福島 芝1200m ---
     # 直線292m: JRA最短→逃げ先行が圧倒的有利
     # 小回り平坦コース→内枠先行が非常に有利
