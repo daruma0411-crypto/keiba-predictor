@@ -56,19 +56,32 @@ def listnet_loss(mu, sigma, y_true, race_ids, alpha_rank=0.3):
     ----------
     mu, sigma : Tensor (n, 1)
     y_true : Tensor (n, 1) - 正規化着順 (0-1)
-    race_ids : array-like - レースID（同一レース内で順位比較）
+    race_ids : Tensor or None - レースID（同一レース内で順位比較）
     alpha_rank : float - ランキング損失の重み
     """
     # Gaussian NLL (従来)
     nll = torch.mean(0.5 * torch.log(sigma ** 2) + 0.5 * ((y_true - mu) / sigma) ** 2)
 
-    # ListNet: 同一レース内での順位確率分布の比較
-    # (バッチ内でレースをグループ化するのは重いので、近似として全体でソフトマックス比較)
-    # P_true = softmax(-y_true) (着順が小さいほど高確率)
-    # P_pred = softmax(-mu)
-    p_true = F.softmax(-y_true.squeeze(), dim=0)
-    p_pred = F.softmax(-mu.squeeze(), dim=0)
-    rank_loss = -torch.sum(p_true * torch.log(p_pred + 1e-8))
+    # Race-level ListNet
+    if race_ids is None:
+        # fallback to batch-global
+        p_true = F.softmax(-y_true.squeeze(), dim=0)
+        p_pred = F.softmax(-mu.squeeze(), dim=0)
+        rank_loss = -torch.sum(p_true * torch.log(p_pred + 1e-8))
+    else:
+        rank_loss = torch.tensor(0.0, device=mu.device)
+        unique_ids = torch.unique(race_ids)
+        count = 0
+        for rid in unique_ids:
+            mask = (race_ids == rid)
+            if mask.sum() < 2:
+                continue
+            p_true_r = F.softmax(-y_true[mask].squeeze(), dim=0)
+            p_pred_r = F.softmax(-mu[mask].squeeze(), dim=0)
+            rank_loss = rank_loss + (-torch.sum(p_true_r * torch.log(p_pred_r + 1e-8)))
+            count += 1
+        if count > 0:
+            rank_loss = rank_loss / count
 
     return nll + alpha_rank * rank_loss
 
@@ -86,7 +99,7 @@ class PredictorV2:
 
     def __init__(self, numeric_features=None, cat_features=None):
         self.nf = numeric_features or FEATURES_V2
-        self.cf = cat_features or ['kisyu_code', 'chokyosi_code', 'sire_type']
+        self.cf = cat_features or ['kisyu_code', 'chokyosi_code', 'sire', 'banusi_name']
         self.sc = StandardScaler()
         self.les = {}
         self.m = None
@@ -124,7 +137,7 @@ class PredictorV2:
 
         return Xt, ct
 
-    def train(self, df, ep=80, lr=0.003, bs=256, seed=42, alpha_rank=0.3):
+    def train(self, df, ep=80, lr=0.003, bs=256, seed=42, alpha_rank=0.3, patience=5):
         """
         学習（Gaussian NLL + ListNet ハイブリッド損失）
 
@@ -132,7 +145,10 @@ class PredictorV2:
         ----------
         ep : int - エポック数 (デフォルト80に増加)
         alpha_rank : float - ランキング損失の重み
+        patience : int - early stopping patience (epochs)
         """
+        import copy
+
         torch.manual_seed(seed)
         np.random.seed(seed)
 
@@ -142,8 +158,12 @@ class PredictorV2:
         h[h == 0] = 16
         yt = torch.FloatTensor((y - 1) / (h - 1)).unsqueeze(1).to(self.d)
 
-        # race_ids for ranking loss
-        race_ids = df['race_id'].values if 'race_id' in df.columns else None
+        # race_ids for ranking loss — encode as integer tensor
+        if 'race_id' in df.columns:
+            race_id_le = LabelEncoder()
+            race_ids_t = torch.LongTensor(race_id_le.fit_transform(df['race_id'].values)).to(self.d)
+        else:
+            race_ids_t = None
 
         Xt, ct = self._prepare(df, True)
 
@@ -154,30 +174,64 @@ class PredictorV2:
                 ed[c] = (vs, min(50, max(4, (vs + 1) // 2)))
 
         self.m = HorseRaceModelV2(len(self.nf), ed).to(self.d)
-        opt = torch.optim.Adam(self.m.parameters(), lr=lr)
+        opt = torch.optim.Adam(self.m.parameters(), lr=lr, weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=ep)
 
-        self.m.train()
+        # Early stopping: last 10% by index (data assumed sorted by date) as validation
         n = len(Xt)
+        val_size = max(1, int(n * 0.1))
+        train_size = n - val_size
+        train_idx = torch.arange(train_size)
+        val_idx = torch.arange(train_size, n)
+
+        best_val_loss = float('inf')
+        best_weights = None
+        no_improve = 0
+
+        self.m.train()
 
         for e in range(ep):
-            idx = torch.randperm(n)
+            # --- Training ---
+            perm = train_idx[torch.randperm(train_size)]
             epoch_loss = 0
             batches = 0
-            for i in range(0, n, bs):
-                bi = idx[i:i + bs]
+            for i in range(0, train_size, bs):
+                bi = perm[i:i + bs]
+                rid_batch = race_ids_t[bi] if race_ids_t is not None else None
                 mu, s = self.m(Xt[bi], {c: t[bi] for c, t in ct.items()})
 
                 # ハイブリッド損失
-                loss = listnet_loss(mu, s, yt[bi], None, alpha_rank)
+                loss = listnet_loss(mu, s, yt[bi], rid_batch, alpha_rank)
 
                 opt.zero_grad()
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.m.parameters(), max_norm=1.0)
                 opt.step()
                 epoch_loss += loss.item()
                 batches += 1
 
             scheduler.step()
+
+            # --- Validation ---
+            self.m.eval()
+            with torch.no_grad():
+                rid_val = race_ids_t[val_idx] if race_ids_t is not None else None
+                mu_v, s_v = self.m(Xt[val_idx], {c: t[val_idx] for c, t in ct.items()})
+                val_loss = listnet_loss(mu_v, s_v, yt[val_idx], rid_val, alpha_rank).item()
+            self.m.train()
+
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_weights = copy.deepcopy(self.m.state_dict())
+                no_improve = 0
+            else:
+                no_improve += 1
+                if no_improve >= patience:
+                    break
+
+        # Restore best model
+        if best_weights is not None:
+            self.m.load_state_dict(best_weights)
 
     def predict(self, df):
         """各馬の能力値(μ, σ)を推論"""

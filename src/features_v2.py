@@ -110,12 +110,14 @@ def build_features_v2(df, alpha=0.3, n_past=10):
         'interval_days': np.nan,
         'pace_h_time_diff': np.nan,      # ハイペース時着差EMA（新）
         'pace_s_time_diff': np.nan,      # スロー時着差EMA（新）
+        'ema_agari': np.nan,             # 末脚指標EMA（v9b互換: 4角順位-着順）
+        'long_stretch_avg': np.nan,      # 直線長コース平均着順（v9b互換）
     }
     for col, default in feat_cols_init.items():
         df_sorted[col] = default
 
     # 通過順平均
-    for corner in ['jyuni_1c', 'jyuni_2c', 'jyuni_3c']:
+    for corner in ['jyuni_1c', 'jyuni_2c', 'jyuni_3c', 'jyuni_4c']:
         df_sorted[f'avg_{corner}'] = np.nan
 
     # === 騎手・調教師 成績 ===
@@ -219,6 +221,11 @@ def build_features_v2(df, alpha=0.3, n_past=10):
         df_sorted.loc[horse.index, 'ema_pace_diff'] = rolling_ema(
             pace_diff, alpha, n_past).values
 
+        # 末脚指標: 4角順位-着順 (大きいほど末脚が切れる)
+        agari_raw = horse['jyuni_4c'].fillna(0) - horse['finish'].fillna(0)
+        agari_raw = agari_raw.where(horse['jyuni_4c'] > 0, 0)  # jyuni_4c=0なら0
+        df_sorted.loc[horse.index, 'ema_agari'] = rolling_ema(agari_raw.astype(float), alpha, n_past).values
+
         # 勝率・複勝率
         wins = (horse['finish'] == 1).astype(float)
         top3s = (horse['finish'] <= 3).astype(float)
@@ -233,7 +240,7 @@ def build_features_v2(df, alpha=0.3, n_past=10):
         df_sorted.loc[horse.index, 'interval_days'] = horse['date'].diff().dt.days.values
 
         # 通過順平均
-        for corner in ['jyuni_1c', 'jyuni_2c', 'jyuni_3c']:
+        for corner in ['jyuni_1c', 'jyuni_2c', 'jyuni_3c', 'jyuni_4c']:
             vals = horse[corner].replace(0, np.nan).astype(float)
             df_sorted.loc[horse.index, f'avg_{corner}'] = vals.shift(1).expanding().mean().values
 
@@ -260,6 +267,13 @@ def build_features_v2(df, alpha=0.3, n_past=10):
                 same = past[past['baba'] == cur['baba']]
                 if len(same) > 0:
                     df_sorted.loc[row_idx, 'same_baba_finish'] = same['finish'].mean()
+
+            # 直線長コース適性
+            LONG_STRETCH_VENUES = {'東京', '新潟'}
+            # Hanshin/Kyoto outer も該当するが venue名だけでは内外区別不可、将来対応
+            past_ls = past[past['venue'].isin(LONG_STRETCH_VENUES)]
+            if len(past_ls) > 0:
+                df_sorted.loc[row_idx, 'long_stretch_avg'] = past_ls['finish'].mean()
 
         # ペース別着差EMA（ハイペース/スロー）
         pace_classes = horse['pace_class'].values
@@ -298,6 +312,7 @@ def build_features_v2(df, alpha=0.3, n_past=10):
     # === バイナリ互換カラム ===
     df_sorted['has_same_dist'] = df_sorted['same_dist_finish'].notna().astype(int)
     df_sorted['has_same_baba'] = df_sorted['same_baba_finish'].notna().astype(int)
+    df_sorted['has_long_stretch'] = df_sorted['long_stretch_avg'].notna().astype(int)
 
     # === 前走クラス ===
     GRADE_CLASS_SCORE = {'A': 8, 'B': 7, 'C': 6, 'L': 5, 'E': 4}
@@ -362,7 +377,7 @@ FEATURES_V2 = [
     'pace_h_time_diff', 'pace_s_time_diff',
 
     # 脚質・通過順
-    'avg_run_style', 'avg_jyuni_1c', 'avg_jyuni_2c', 'avg_jyuni_3c',
+    'avg_run_style', 'avg_jyuni_1c', 'avg_jyuni_2c', 'avg_jyuni_3c', 'avg_jyuni_4c',
 
     # 適性
     'same_dist_finish', 'same_surface_finish', 'same_baba_finish',
@@ -380,9 +395,13 @@ FEATURES_V2 = [
 
     # 成績
     'win_rate', 'top3_rate',
+
+    # 末脚・コース適性（v9b互換）
+    'ema_agari',
+    'long_stretch_avg', 'has_long_stretch',
 ]
 
-CAT_FEATURES_V2 = ['kisyu_code', 'chokyosi_code', 'sire_type']
+CAT_FEATURES_V2 = ['kisyu_code', 'chokyosi_code', 'sire', 'banusi_name']
 
 
 if __name__ == '__main__':

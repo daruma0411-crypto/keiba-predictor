@@ -1,11 +1,12 @@
 """
-汎用レース予測スクリプト (Layer 1→2→3 一気通貫)
+汎用レース予測スクリプト v2 (Layer 1→2→3 一気通貫)
 
 使い方:
     py -3.13 scripts/predict.py C:/TXT/04112.csv
     py -3.13 scripts/predict.py C:/TXT/04112.csv --course fukushima_turf_1200
     py -3.13 scripts/predict.py C:/TXT/04112.csv --no-debate
 
+v2エンジン: PredictorV2(4層NN+ListNet) + 40特徴量 + 40k学習データ + 80epoch
 コースプロファイルが未定義なら自動でデフォルト係数を使用。
 """
 import sys
@@ -27,10 +28,26 @@ import torch
 
 np.random.seed(42)
 
-from src.predictor import Predictor, FEATURES_V9, CAT_FEATURES
+from src.predictor_v2 import PredictorV2
+from src.features_v2 import FEATURES_V2, CAT_FEATURES_V2
 from src.qmc_courses import qmc_sim, COURSE_PROFILES, list_courses
 from src.prompts import build_prompt
 from src.entry_parser import parse_entry_csv, build_race_features
+
+
+def select_top5(mc, n_pop=5, cutoff=5):
+    """分割選抜: cutoff番人気以内からQMC上位n_pop頭 + 残りをQMC順で補充して5頭"""
+    if 'ninki' not in mc.columns:
+        mc = mc.copy()
+        mc['ninki'] = mc['odds'].rank(method='first')
+    pop = mc[mc['ninki'] <= cutoff].head(n_pop)
+    n_disc = 5 - len(pop)
+    if n_disc > 0:
+        disc = mc[~mc.index.isin(pop.index)].head(n_disc)
+        selected = pd.concat([pop, disc])
+    else:
+        selected = pop
+    return selected.sort_values('expected_rank').head(5)
 
 
 def find_course(race_info, course_override=None):
@@ -54,7 +71,7 @@ def find_course(race_info, course_override=None):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='汎用レース予測 (v9b + QMC + 議長ディベート)')
+    parser = argparse.ArgumentParser(description='汎用レース予測 v2 (PredictorV2 + QMC + 議長ディベート)')
     parser.add_argument('csv_path', help='出馬表CSVパス')
     parser.add_argument('--course', default=None, help='コースプロファイルキー (省略時は自動検出)')
     parser.add_argument('--cache', default=None, help='特徴量キャッシュパス (省略時は最新を自動選択)')
@@ -80,11 +97,11 @@ def main():
     if args.cache:
         cache_path = args.cache
     else:
-        # 最新キャッシュを自動選択
+        # 最新キャッシュを自動選択 (v2優先)
         candidates = [
+            'data/features_v2_cache.pkl',
             'data/features_v9b_2026.pkl',
             'data/features_v9b_cache.pkl',
-            'data/features_all_v4.pkl',
         ]
         cache_path = next((p for p in candidates if os.path.exists(p)), None)
         if cache_path is None:
@@ -103,10 +120,11 @@ def main():
     print(f'  Done in {t1 - t_start:.1f}s')
 
     # ==================================================
-    # Step 3: NN学習 (Layer 1)
+    # Step 3: NN学習 (Layer 1) — v2エンジン D構成
     # ==================================================
-    print(f'\n[Step3/Layer1] Training NN (seed=42, ep=50, lr=0.003)...')
-    use_f = [f for f in FEATURES_V9 if f in feat.columns]
+    print(f'\n[Step3/Layer1] Training PredictorV2 (seed=42, ep=80, lr=0.003, 40k)...')
+    use_f = [f for f in FEATURES_V2 if f in feat.columns]
+    use_cf = [f for f in CAT_FEATURES_V2 if f in feat.columns]
 
     is_turf = 1 if race_info['surface_key'] == 'turf' else 0
     tr = feat[
@@ -114,11 +132,11 @@ def main():
         (feat['is_turf'] == is_turf) &
         (feat['past_count'] > 0) &
         (feat['finish'] > 0)
-    ].sort_values('date').tail(20000).copy()
+    ].sort_values('date').tail(40000).copy()
     print(f'  Training: {len(tr):,} samples ({tr["date"].min()} ~ {tr["date"].max()})')
 
-    pred = Predictor(use_f, CAT_FEATURES)
-    pred.train(tr, ep=50, lr=0.003, seed=42)
+    pred = PredictorV2(use_f, use_cf)
+    pred.train(tr, ep=80, lr=0.003, seed=42)
     t2 = time.time()
     print(f'  Done in {t2 - t1:.1f}s')
 
@@ -152,12 +170,16 @@ def main():
     print(f'\n{"="*80}')
     print(f'  {race_info["date_str"]} {race_info["venue"]}{race_info["race_num"]}R '
           f'{race_info["surface"]}{race_info["distance"]}m {race_info["class_name"]}')
-    print(f'  v9b + QMC予測結果 | コース: {course_name}')
+    print(f'  v2(D) + QMC予測結果 | コース: {course_name}')
     print(f'{"="*80}')
 
+    # 分割選抜: 5番人気以内からQMC上位5頭
+    top5 = select_top5(mc, n_pop=5, cutoff=5)
+    top5_umabans = set(top5['umaban'].astype(int))
+
     print(f'\n  {"順位":>4s} {"枠":>2s} {"番":>3s} {"馬名":18s} '
-          f'{"勝率":>7s} {"複勝率":>7s} {"期待着順":>8s} {"μ":>7s} {"σ":>7s}')
-    print(f'  {"-"*76}')
+          f'{"勝率":>7s} {"複勝率":>7s} {"期待着順":>8s} {"μ":>7s} {"σ":>7s}  選抜')
+    print(f'  {"-"*82}')
     for rank, (_, r) in enumerate(mc.iterrows(), 1):
         u = int(r['umaban'])
         rf_row = rf[rf['umaban'] == u]
@@ -165,9 +187,15 @@ def main():
             continue
         rf_row = rf_row.iloc[0]
         ps_row = ps[ps['umaban'] == u].iloc[0]
+        tag = ' ★' if u in top5_umabans else ''
         print(f'  {rank:4d} {int(rf_row["wakuban"]):2d} {u:3d} {r["horse_name"]:18s} '
               f'{r["win_prob"]:7.1%} {r["top3_prob"]:7.1%} {r["expected_rank"]:8.2f} '
-              f'{ps_row["mu"]:7.4f} {ps_row["sigma"]:7.4f}')
+              f'{ps_row["mu"]:7.4f} {ps_row["sigma"]:7.4f}{tag}')
+
+    print(f'\n  Layer1-2 選抜TOP5 (5番人気以内からQMC上位):')
+    for rk, (_, r) in enumerate(top5.iterrows(), 1):
+        print(f'    {rk}. [{int(r["umaban"]):2d}] {r["horse_name"]}')
+    print(f'  ※穴馬発掘はLayer3ディベートで実施')
 
     # ==================================================
     # Layer 3: 議長プロンプト生成 + ディベート
@@ -184,6 +212,7 @@ def main():
             race_features=rf,
             nn_preds=ps,
             race_id=race_info['race_id'],
+            top5=top5,
         )
         # プロンプトをファイルに保存
         out_name = f'output_{race_info["race_id"]}_prompt.txt'

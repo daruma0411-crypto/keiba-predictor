@@ -9,7 +9,7 @@ import numpy as np
 
 MODERATOR_PROMPT = """あなたはプロのクオンツファンドにおける「AI予測モデルの最終モデレーター（議長）」です。
 
-以下のデータは、私の構築した競馬予測モデル（v9b）が弾き出した、最新の推論シミュレーション結果です。
+以下のデータは、私の構築した競馬予測モデル（v2/D構成: 4層NN+ListNet, 40k学習, 80epoch）が弾き出した、最新の推論シミュレーション結果です。
 NN（ニューラルネットワーク）とQMC（量子モンテカルロ）による出力が含まれています。
 
 【レース情報】
@@ -35,19 +35,44 @@ NN（ニューラルネットワーク）とQMC（量子モンテカルロ）に
 ★必須タスク（偽物狩り）：v9bの予測順位（E[rank]や勝率）が上位であっても、「絶対指標（タイム・末脚）が平凡」かつ「ペース展開に泣くリスク」がある人気馬を見つけ、必ず論破すること。
 
 ■ ディベートの進行手順
+【ステップ0：全馬スクリーニング（必須・省略厳禁）】
+ディベート開始前に、A・B・Cの3エージェントがそれぞれ**全馬**を自分の基準で評価し、以下の表を作成すること。
+QMC順位に関係なく、全馬を漏れなくチェックすること。特にQMC下位の馬こそ丁寧に見ること。
+
+| 馬番 | 馬名 | A評価 | B評価 | C評価 | 注目理由(あれば) |
+
+評価基準:
+- A(絶対能力): タイムZ・上がり3F EMA・着差EMAの絶対値で ◎/○/△/× の4段階
+- B(舞台適性): 距離差・同距離着順・脚質×コース形態で ◎/○/△/× の4段階
+- C(展開リスク): 脚質×想定ペース・σ・不利確率で ◎/○/△/× の4段階
+
+★この表で、QMC下位なのにいずれかのエージェントが◎をつけた馬は「要注目馬」として必ずステップ1以降で議論すること。
+
 【ステップ1：各エージェントの個別見解】
 A、B、Cが順番に自身の「最上位推奨馬」と「危険視する上位候補」を発表。
+ステップ0の「要注目馬」にも必ず言及すること。
 
 【ステップ2：リスク検証と激しい反論（クロスチェック）】
 Agent Cを中心に、AとBの推奨馬に対してデータを用いた徹底的な粗探しと反論を実施。
 
 【ステップ3：議長（あなた）による最終結論】
-3者の議論を統合し、安全な妥協案（合成の誤謬）を避け、以下の明確な役割を持たせた【最終推奨5頭】を決定してください。
+3者の議論を統合し、安全な妥協案（合成の誤謬）を避け、以下の構造で【最終推奨8頭】を決定してください。
 
-* 【軸馬枠（1〜2頭）】：μ、タイム偏差、適性、展開リスクの全てで死角が少ない馬。
-* 【アノマリー枠（必須）】：「σ（不確実性）が極めて大きい」＋「タイムや末脚の絶対値はトップクラス」＋「しかしNNのμは低評価（データ不足によるディスカウント）」という条件を満たす、隠れた怪物候補。
-* 【大穴展開枠（必須）】：絶対能力は劣るが、Agent Cが予測したペース（例：スローの単騎逃げ、ハイペースの追込など）においてのみ、激走するオッズ妙味（EV）の高い馬。
+■ Layer1-2選抜TOP5（5番人気以内からQMC上位5頭）は既に確定済みです。
+{top5_info}
+議長はこの5頭を「堅実枠」として採用した上で、以下の3頭を追加選定してください。
 
+* 【堅実枠（5頭・確定済み）】：Layer1-2が5番人気以内から選抜。変更不可。
+* 【アノマリー枠（1頭・必須）】：6番人気以降で、「σが大きい」＋「タイムや末脚の絶対値はトップクラス」＋「NNのμは低評価（データ不足割引）」を満たす、隠れた怪物候補。
+* 【大穴展開枠（1頭・必須）】：6番人気以降で、絶対能力は劣るが、Agent Cが予測したペース展開（スロー単騎逃げ、ハイペース追込等）でのみ激走するEV妙味の高い馬。
+* 【消し馬（1頭・必須）】：堅実枠5頭の中で最もリスクが高い馬を指名し、理由を述べること。買い目から外す候補。
+
+最終出力フォーマット:
+◎（本命）○（対抗）▲（単穴）△△（連下2頭）＝堅実枠5頭
+★（アノマリー枠）☆（大穴展開枠）
+×（消し馬）＋消し理由
+
+加えて、推奨買い目（3連複/ワイド等）を提示すること。
 クオンツ投資家が納得できる、論理的で詳細な選定レポートを出力してください。"""
 
 
@@ -88,16 +113,25 @@ def format_horse_data(mc_results, race_features, nn_preds):
     # ヘッダー
     lines.append(
         f"{'順位':>4s} {'馬番':>4s} {'枠':>2s} {'馬名':18s} "
-        f"{'odds':>7s} {'μ':>7s} {'σ':>7s} "
+        f"{'μ':>7s} {'σ':>7s} "
         f"{'勝率':>7s} {'複勝率':>7s} {'E[rank]':>8s} "
-        f"{'EMA着順':>8s} {'タイムZ':>8s} {'末脚EMA':>8s} "
-        f"{'直線適性':>8s} {'同距離':>8s} {'同馬場':>8s} {'距離差':>6s} "
-        f"{'脚質':>6s} {'3角位':>6s} {'4角位':>6s} "
+        f"{'EMA着順':>8s} {'タイムZ':>8s} {'着差EMA':>8s} "
+        f"{'上3F_EMA':>8s} {'上3F順':>8s} {'上3F_Z':>8s} "
+        f"{'PaceF':>8s} {'PaceD':>8s} {'H着差':>7s} {'S着差':>7s} "
+        f"{'同距離':>8s} {'同馬場面':>8s} {'同馬場状':>8s} {'距離差':>6s} "
+        f"{'脚質':>6s} {'1角位':>6s} {'2角位':>6s} {'3角位':>6s} "
         f"{'馬体重':>6s} {'増減':>4s} {'間隔日':>6s} {'走数':>4s} "
-        f"{'騎手勝':>7s} {'騎手複':>7s} {'師勝':>7s} {'師複':>7s} "
+        f"{'騎手勝':>7s} {'騎手複':>7s} {'騎手D勝':>7s} {'騎手D複':>7s} "
+        f"{'師勝':>7s} {'師複':>7s} {'師D勝':>7s} {'師D複':>7s} "
         f"{'前走CL':>10s} {'賞金log':>8s} {'勝率実':>7s} {'複勝実':>7s}"
     )
-    lines.append("-" * 250)
+    lines.append("-" * 300)
+
+    def _fmt(val, width=8, decimals=3):
+        """NaN安全なフォーマット"""
+        if pd.isna(val):
+            return ' ' * (width - 3) + 'N/A'
+        return f"{val:{width}.{decimals}f}"
 
     for rank, (_, r) in enumerate(mc_results.iterrows(), 1):
         u = int(r['umaban'])
@@ -108,59 +142,61 @@ def format_horse_data(mc_results, race_features, nn_preds):
         fd = fd.iloc[0]
         ps = ps.iloc[0]
 
-        ls = f"{fd['long_stretch_avg']:8.2f}" if pd.notna(fd.get('long_stretch_avg')) else '     N/A'
-        sd = f"{fd['same_dist_finish']:8.2f}" if pd.notna(fd.get('same_dist_finish')) else '     N/A'
-        ss = f"{fd['same_surface_finish']:8.2f}" if pd.notna(fd.get('same_surface_finish')) else '     N/A'
-
         # 前走クラス名
-        prev_cl = fd['prev_race_class']
+        prev_cl = fd.get('prev_race_class', 1)
         cl_name = CLASS_NAMES.get(int(prev_cl), f'{int(prev_cl)}')
         cl_str = f"{int(prev_cl)}({cl_name})"
 
         lines.append(
             f"{rank:4d} {u:4d} {int(fd['wakuban']):2d} {r['horse_name']:18s} "
-            f"{r['odds']:7.1f} {ps['mu']:7.4f} {ps['sigma']:7.4f} "
+            f"{ps['mu']:7.4f} {ps['sigma']:7.4f} "
             f"{r['win_prob']:7.2%} {r['top3_prob']:7.2%} {r['expected_rank']:8.2f} "
-            f"{fd['ema_finish']:8.3f} {fd['ema_time_zscore']:8.3f} {fd['ema_agari']:8.3f} "
-            f"{ls} {sd} {ss} {fd['prev_dist_diff']:6.0f} "
-            f"{fd['avg_run_style']:6.2f} {fd['avg_jyuni_3c']:6.2f} {fd['avg_jyuni_4c']:6.2f} "
-            f"{fd['bataijyu']:6.0f} {fd['zogen_sa']:4.0f} {fd['interval_days']:6.0f} {fd['past_count']:4.0f} "
-            f"{fd['jockey_win_rate']:7.3f} {fd['jockey_top3_rate']:7.3f} "
-            f"{fd['trainer_win_rate']:7.3f} {fd['trainer_top3_rate']:7.3f} "
-            f"{cl_str:>10s} {fd['log_prize_money']:8.3f} "
-            f"{fd['win_rate']:7.3f} {fd['top3_rate']:7.3f}"
+            f"{_fmt(fd.get('ema_finish'))} {_fmt(fd.get('ema_time_zscore'))} {_fmt(fd.get('ema_time_diff'))} "
+            f"{_fmt(fd.get('ema_agari_3f'))} {_fmt(fd.get('ema_agari_rank'))} {_fmt(fd.get('ema_agari_zscore'))} "
+            f"{_fmt(fd.get('ema_pace_front'))} {_fmt(fd.get('ema_pace_diff'))} "
+            f"{_fmt(fd.get('pace_h_time_diff'), 7)} {_fmt(fd.get('pace_s_time_diff'), 7)} "
+            f"{_fmt(fd.get('same_dist_finish'))} {_fmt(fd.get('same_surface_finish'))} {_fmt(fd.get('same_baba_finish'))} "
+            f"{fd.get('prev_dist_diff', 0):6.0f} "
+            f"{fd.get('avg_run_style', 0):6.2f} "
+            f"{_fmt(fd.get('avg_jyuni_1c'), 6, 2)} {_fmt(fd.get('avg_jyuni_2c'), 6, 2)} {_fmt(fd.get('avg_jyuni_3c'), 6, 2)} "
+            f"{fd.get('bataijyu', 0):6.0f} {fd.get('zogen_sa', 0):4.0f} "
+            f"{fd.get('interval_days', 0):6.0f} {fd.get('past_count', 0):4.0f} "
+            f"{fd.get('jockey_win_rate', 0):7.3f} {fd.get('jockey_top3_rate', 0):7.3f} "
+            f"{fd.get('jockey_dist_win_rate', 0):7.3f} {fd.get('jockey_dist_top3_rate', 0):7.3f} "
+            f"{fd.get('trainer_win_rate', 0):7.3f} {fd.get('trainer_top3_rate', 0):7.3f} "
+            f"{fd.get('trainer_dist_win_rate', 0):7.3f} {fd.get('trainer_dist_top3_rate', 0):7.3f} "
+            f"{cl_str:>10s} {fd.get('log_prize_money', 0):8.3f} "
+            f"{fd.get('win_rate', 0):7.3f} {fd.get('top3_rate', 0):7.3f}"
         )
 
     return "\n".join(lines)
 
 
 def build_prompt(race_name, course_name, distance, heads, date_str,
-                 mc_results, race_features, nn_preds, race_id=''):
+                 mc_results, race_features, nn_preds, race_id='',
+                 top5=None):
     """
     3層アーキテクチャの最終出力: 議長プロンプトを完成させる
 
-    使い方:
-        from src.predictor import Predictor
-        from src.qmc_courses import qmc_sim
-        from src.prompts import build_prompt
-
-        pred = Predictor()
-        pred.train(train_data)
-        nn_preds = pred.predict(race_data)
-        mc = qmc_sim(nn_preds, race_features=race_data, course='nakayama_turf_1600')
-
-        prompt = build_prompt(
-            race_name='ニュージーランドトロフィー G2',
-            course_name='中山芝1600m',
-            distance=1600,
-            heads=len(race_data),
-            date_str='2026-04-12',
-            mc_results=mc,
-            race_features=race_data,
-            nn_preds=nn_preds,
-        )
-        print(prompt)  # → これをLLMに渡す
+    Parameters
+    ----------
+    top5 : DataFrame, optional
+        分割選抜TOP5。Noneなら旧方式（QMC TOP5）を使用。
     """
     race_info = format_race_info(race_name, course_name, distance, heads, date_str, race_id)
     horse_data = format_horse_data(mc_results, race_features, nn_preds)
-    return MODERATOR_PROMPT.format(race_info=race_info, horse_data=horse_data)
+
+    # TOP5情報をプロンプトに埋め込む
+    if top5 is not None:
+        top5_lines = []
+        for rk, (_, r) in enumerate(top5.iterrows(), 1):
+            top5_lines.append(f"  {rk}. [{int(r['umaban']):2d}] {r['horse_name']}")
+        top5_info = "\n".join(top5_lines)
+    else:
+        # 旧互換: QMC TOP5
+        top5_lines = []
+        for rk, (_, r) in enumerate(mc_results.head(5).iterrows(), 1):
+            top5_lines.append(f"  {rk}. [{int(r['umaban']):2d}] {r['horse_name']}")
+        top5_info = "\n".join(top5_lines)
+
+    return MODERATOR_PROMPT.format(race_info=race_info, horse_data=horse_data, top5_info=top5_info)

@@ -239,12 +239,33 @@ def build_race_features(csv_path, feat_cache, prev_race_csv=None):
             old_ema = latest_row.get('ema_finish', latest_finish)
             row['ema_finish'] = alpha * latest_finish + (1 - alpha) * old_ema
 
-            # ema_time_diff: 着差タイムEMAを更新（time_diffがキャッシュにあれば）
+            # ema_time_diff: 着差タイムEMAを更新
             if 'ema_time_diff' in latest_row.index and 'time_diff' in latest_row.index:
                 old_td = latest_row.get('ema_time_diff', 0)
                 latest_td = latest_row.get('time_diff', 0)
                 if pd.notna(old_td) and pd.notna(latest_td):
                     row['ema_time_diff'] = alpha * latest_td + (1 - alpha) * old_td
+
+            # v2特徴量: 上がり3F系EMA更新
+            for ema_col, raw_col in [
+                ('ema_agari_3f', 'agari_3f'),
+                ('ema_agari_rank', 'agari_rank'),
+                ('ema_agari_zscore', 'agari_3f_zscore'),
+                ('ema_pace_front', 'pace_front'),
+            ]:
+                if ema_col in latest_row.index and raw_col in latest_row.index:
+                    old_val = latest_row.get(ema_col)
+                    new_val = latest_row.get(raw_col)
+                    if pd.notna(old_val) and pd.notna(new_val):
+                        row[ema_col] = alpha * new_val + (1 - alpha) * old_val
+
+            # ema_pace_diff: 前半-後半ペース差EMA
+            if 'ema_pace_diff' in latest_row.index:
+                pf = latest_row.get('pace_front')
+                pr = latest_row.get('pace_rear')
+                old_pd = latest_row.get('ema_pace_diff')
+                if pd.notna(pf) and pd.notna(pr) and pd.notna(old_pd):
+                    row['ema_pace_diff'] = alpha * (pf - pr) + (1 - alpha) * old_pd
 
             # win_rate / top3_rate: 累積率を更新
             old_wins = latest_row.get('win_rate', 0) * latest_pc
@@ -357,9 +378,9 @@ def build_race_features(csv_path, feat_cache, prev_race_csv=None):
     if len(rf) > 0:
         if 'has_same_dist' not in rf.columns and 'same_dist_finish' in rf.columns:
             rf['has_same_dist'] = rf['same_dist_finish'].notna().astype(int)
-        if 'has_long_stretch' not in rf.columns and 'long_stretch_avg' in rf.columns:
-            rf['has_long_stretch'] = rf['long_stretch_avg'].notna().astype(int)
-        elif 'has_long_stretch' not in rf.columns:
-            rf['has_long_stretch'] = 0
+        if 'has_same_baba' not in rf.columns and 'same_baba_finish' in rf.columns:
+            rf['has_same_baba'] = rf['same_baba_finish'].notna().astype(int)
+        elif 'has_same_baba' not in rf.columns:
+            rf['has_same_baba'] = 0
 
     return race_info, rf, missing
