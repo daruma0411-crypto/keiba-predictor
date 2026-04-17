@@ -35,19 +35,24 @@ from src.prompts import build_prompt
 from src.entry_parser import parse_entry_csv, build_race_features
 
 
-def select_top5(mc, n_pop=5, cutoff=5):
-    """分割選抜: cutoff番人気以内からQMC上位n_pop頭 + 残りをQMC順で補充して5頭"""
+def select_two_lines(mc):
+    """
+    2系統選抜:
+      系統A(占有率重視): QMC上位5頭 = V1従来
+      系統B(ROI重視): ★本命2頭(5番人気以内QMC上位) + ☆穴3頭(6番人気以降QMC上位)
+    """
     if 'ninki' not in mc.columns:
         mc = mc.copy()
         mc['ninki'] = mc['odds'].rank(method='first')
-    pop = mc[mc['ninki'] <= cutoff].head(n_pop)
-    n_disc = 5 - len(pop)
-    if n_disc > 0:
-        disc = mc[~mc.index.isin(pop.index)].head(n_disc)
-        selected = pd.concat([pop, disc])
-    else:
-        selected = pop
-    return selected.sort_values('expected_rank').head(5)
+
+    line_a = mc.head(5)  # V1従来
+
+    pop = mc[mc['ninki'] <= 5].head(2)
+    disc = mc[mc['ninki'] > 5].head(3)
+    line_b = pd.concat([pop, disc]).sort_values('expected_rank')
+    pop_umabans = set(pop['umaban'].astype(int))
+
+    return line_a, line_b, pop_umabans
 
 
 def find_course(race_info, course_override=None):
@@ -173,13 +178,14 @@ def main():
     print(f'  v2(D) + QMC予測結果 | コース: {course_name}')
     print(f'{"="*80}')
 
-    # 分割選抜: 5番人気以内からQMC上位5頭
-    top5 = select_top5(mc, n_pop=5, cutoff=5)
-    top5_umabans = set(top5['umaban'].astype(int))
+    # 2系統選抜
+    line_a, line_b, pop_umabans = select_two_lines(mc)
+    a_set = set(line_a['umaban'].astype(int))
+    b_set = set(line_b['umaban'].astype(int))
 
     print(f'\n  {"順位":>4s} {"枠":>2s} {"番":>3s} {"馬名":18s} '
           f'{"勝率":>7s} {"複勝率":>7s} {"期待着順":>8s} {"μ":>7s} {"σ":>7s}  選抜')
-    print(f'  {"-"*82}')
+    print(f'  {"-"*85}')
     for rank, (_, r) in enumerate(mc.iterrows(), 1):
         u = int(r['umaban'])
         rf_row = rf[rf['umaban'] == u]
@@ -187,15 +193,29 @@ def main():
             continue
         rf_row = rf_row.iloc[0]
         ps_row = ps[ps['umaban'] == u].iloc[0]
-        tag = ' ★' if u in top5_umabans else ''
+        tags = []
+        if u in a_set:
+            tags.append('A')
+        if u in b_set:
+            if u in pop_umabans:
+                tags.append('B★')
+            else:
+                tags.append('B☆')
+        tag = ' ' + ','.join(tags) if tags else ''
         print(f'  {rank:4d} {int(rf_row["wakuban"]):2d} {u:3d} {r["horse_name"]:18s} '
               f'{r["win_prob"]:7.1%} {r["top3_prob"]:7.1%} {r["expected_rank"]:8.2f} '
               f'{ps_row["mu"]:7.4f} {ps_row["sigma"]:7.4f}{tag}')
 
-    print(f'\n  Layer1-2 選抜TOP5 (5番人気以内からQMC上位):')
-    for rk, (_, r) in enumerate(top5.iterrows(), 1):
+    print(f'\n  系統A(占有率重視 / V1従来): QMC上位5頭')
+    for rk, (_, r) in enumerate(line_a.iterrows(), 1):
         print(f'    {rk}. [{int(r["umaban"]):2d}] {r["horse_name"]}')
-    print(f'  ※穴馬発掘はLayer3ディベートで実施')
+
+    print(f'\n  系統B(ROI重視 / 堅2穴3): ★本命(<=5人気QMC上位2) + ☆穴(6人気~QMC上位3)')
+    for rk, (_, r) in enumerate(line_b.iterrows(), 1):
+        u = int(r['umaban'])
+        tag = '★' if u in pop_umabans else '☆'
+        nk = int(r['ninki']) if 'ninki' in r and pd.notna(r['ninki']) else '?'
+        print(f'    {rk}. {tag}[{u:2d}] {r["horse_name"]} ({nk}人気/{r["odds"]:.1f}倍)')
 
     # ==================================================
     # Layer 3: 議長プロンプト生成 + ディベート
@@ -212,7 +232,9 @@ def main():
             race_features=rf,
             nn_preds=ps,
             race_id=race_info['race_id'],
-            top5=top5,
+            line_a=line_a,
+            line_b=line_b,
+            pop_umabans=pop_umabans,
         )
         # プロンプトをファイルに保存
         out_name = f'output_{race_info["race_id"]}_prompt.txt'
