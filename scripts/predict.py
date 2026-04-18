@@ -33,13 +33,14 @@ from src.features_v2 import FEATURES_V2, CAT_FEATURES_V2
 from src.qmc_courses import qmc_sim, COURSE_PROFILES, list_courses
 from src.prompts import build_prompt
 from src.entry_parser import parse_entry_csv, build_race_features
+from src.debate_rules import select_with_rules
 
 
-def select_two_lines(mc):
+def select_two_lines(mc, rf):
     """
     2系統選抜:
-      系統A(占有率重視): QMC上位5頭 = V1従来
-      系統B(ROI重視): ★本命2頭(5番人気以内QMC上位) + ☆穴3頭(6番人気以降QMC上位)
+      系統A(V1従来): QMC上位5頭
+      系統B(ルール適用): 消しルール適用済み堅2穴3
     """
     if 'ninki' not in mc.columns:
         mc = mc.copy()
@@ -47,12 +48,10 @@ def select_two_lines(mc):
 
     line_a = mc.head(5)  # V1従来
 
-    pop = mc[mc['ninki'] <= 5].head(2)
-    disc = mc[mc['ninki'] > 5].head(3)
-    line_b = pd.concat([pop, disc]).sort_values('expected_rank')
-    pop_umabans = set(pop['umaban'].astype(int))
+    # ルール適用選抜
+    line_b, pop_umabans, flagged_info = select_with_rules(mc, rf, n_pop=2, n_disc=3, cutoff=5)
 
-    return line_a, line_b, pop_umabans
+    return line_a, line_b, pop_umabans, flagged_info
 
 
 def find_course(race_info, course_override=None):
@@ -179,7 +178,7 @@ def main():
     print(f'{"="*80}')
 
     # 2系統選抜
-    line_a, line_b, pop_umabans = select_two_lines(mc)
+    line_a, line_b, pop_umabans, flagged_info = select_two_lines(mc, rf)
     a_set = set(line_a['umaban'].astype(int))
     b_set = set(line_b['umaban'].astype(int))
 
@@ -210,12 +209,17 @@ def main():
     for rk, (_, r) in enumerate(line_a.iterrows(), 1):
         print(f'    {rk}. [{int(r["umaban"]):2d}] {r["horse_name"]}')
 
-    print(f'\n  系統B(ROI重視 / 堅2穴3): ★本命(<=5人気QMC上位2) + ☆穴(6人気~QMC上位3)')
+    print(f'\n  系統B(ルール適用 / 堅2穴3): ★本命(<=5人気) + ☆穴(6人気~) ※消しルール適用済み')
     for rk, (_, r) in enumerate(line_b.iterrows(), 1):
         u = int(r['umaban'])
         tag = '★' if u in pop_umabans else '☆'
         nk = int(r['ninki']) if 'ninki' in r and pd.notna(r['ninki']) else '?'
         print(f'    {rk}. {tag}[{u:2d}] {r["horse_name"]} ({nk}人気/{r["odds"]:.1f}倍)')
+
+    if flagged_info:
+        print(f'\n  消しフラグ（QMC TOP8内で除外/降格された馬）:')
+        for fi in flagged_info:
+            print(f'    QMC{fi["qmc_rank"]}位 [{fi["umaban"]:2d}] {fi["horse_name"]} → {", ".join(fi["flags"])}')
 
     # ==================================================
     # Layer 3: 議長プロンプト生成 + ディベート
