@@ -59,8 +59,11 @@ def parse_html(html_path):
     text = raw.decode('cp932', errors='replace')
 
     # --- レース情報 ---
-    # タイトル: 出馬表・中山 9R 袖ケ浦特･2勝
-    title_m = re.search(r'<TITLE>出馬表・(\S+)\s+(\d+)R\s+(.*?)</TITLE>', text)
+    # タイトル: 出馬表・中山 9R 袖ケ浦特･2勝 or 出馬表・福島12R １勝ｸﾗｽ
+    title_m = re.search(r'<TITLE>出馬表・(\S+?)\s*(\d+)R\s*(.*?)</TITLE>', text)
+    if not title_m:
+        # 全角R対応
+        title_m = re.search(r'<TITLE>出馬表・(\S+?)\s*(\d+)Ｒ\s*(.*?)</TITLE>', text)
     venue = title_m.group(1) if title_m else ''
     race_num = int(title_m.group(2)) if title_m else 0
     race_name_raw = title_m.group(3).strip() if title_m else ''
@@ -122,8 +125,9 @@ def parse_html(html_path):
         horse_name = strip_tags(cells[6]).strip().lstrip('*')
         sex_age = strip_tags(cells[8]).strip()
         jockey = strip_tags(cells[9]).strip().lstrip('*')
-        futan = float(strip_tags(cells[10]).strip())
-        odds_text = strip_tags(cells[11]).strip()
+        futan_text = re.sub(r'[^\d.]', '', strip_tags(cells[10]).strip())
+        futan = float(futan_text) if futan_text else 55.0
+        odds_text = re.sub(r'[^\d.]', '', strip_tags(cells[11]).strip())
         try:
             odds = float(odds_text)
         except ValueError:
