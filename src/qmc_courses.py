@@ -49,29 +49,53 @@ COURSE_PROFILES = {
         'noise_scale': 0.02,
     },
 
-    # --- 中山 芝1200m ---
-    # 直線310m: 短い→逃げ先行有利
-    # 内回り急坂→最後の急坂で前が止まることも
-    # スプリント→ペース速い
+    # --- 中山 芝1200m (データ自動生成: 2023-2025, 594R/8746頭) ---
+    # 逃げ勝率13.8%/複勝率32.5% vs 追込3.0%/11.7%: 明確な前有利
+    # 枠順バイアス小さい(内外差なし)
     'nakayama_turf_1200': {
         'name': '中山芝1200m',
         'straight': 310,
-        'pace_base_per_runner': 0.22,
-        'pace_noise': 0.12,
+        'pace_base_per_runner': 0.30,
+        'pace_noise': 0.2066,
         'style_bonus': {
-            'nige':    +0.10,
-            'senkou':  +0.05,
-            'sashi':   -0.03,
-            'oikomi':  -0.08,
+            'nige':    +0.0612,
+            'senkou':  +0.0216,
+            'sashi':   -0.0138,
+            'oikomi':  -0.0427,
         },
         'gate_bias': {
-            'inner_senkou': -0.025,
-            'outer_sashi':  +0.020,
-            'inner_block':  +0.005,
+            'inner_senkou': +0.0076,   # データ上は内外差なし
+            'outer_sashi':  -0.0024,
+            'inner_block':  +0.0001,
         },
-        'trouble_rate': 0.06,
-        'trouble_penalty': 0.17,
-        'noise_scale': 0.025,
+        'trouble_rate': 0.05,
+        'trouble_penalty': 0.15,
+        'noise_scale': 0.02,
+    },
+
+    # --- 中山 芝2000m (データ自動生成: 2023-2025, 91R/1241頭) ---
+    # 皐月賞コース。逃げ12.9%/31.8% 先行10.7%/28.8%: 明確な前有利
+    # 内枠先行35.9% vs 外枠先行24.3%: 内枠先行が圧倒的有利
+    # 差し-0.0018: ほぼフラット(直線310mだが急坂で前が止まる場合あり)
+    'nakayama_turf_2000': {
+        'name': '中山芝2000m',
+        'straight': 310,
+        'pace_base_per_runner': 0.22,
+        'pace_noise': 0.179,
+        'style_bonus': {
+            'nige':    +0.0496,
+            'senkou':  +0.0349,
+            'sashi':   -0.0018,
+            'oikomi':  -0.0523,
+        },
+        'gate_bias': {
+            'inner_senkou': -0.0349,  # 内枠先行が強い
+            'outer_sashi':  +0.0176,
+            'inner_block':  +0.000,
+        },
+        'trouble_rate': 0.05,
+        'trouble_penalty': 0.15,
+        'noise_scale': 0.02,
     },
 
     # --- 福島 芝2600m (Aコース) ---
@@ -155,6 +179,54 @@ COURSE_PROFILES = {
         'trouble_rate': 0.06,       # スプリントは出遅れ影響大
         'trouble_penalty': 0.18,    # 出遅れペナルティ大きめ
         'noise_scale': 0.025,       # スプリントはバラつきやや大
+    },
+
+    # --- 阪神 芝1400m内回り (データ自動生成: 2023-2025, 236R/3360頭) ---
+    # 先行>逃げ(複勝率27.8% vs 26.6%): 先行が最も有利
+    # 外枠先行が内枠先行より有利(30.7% vs 24.0%): 1400mスタート位置の影響
+    'hanshin_turf_1400': {
+        'name': '阪神芝1400m内回り',
+        'straight': 356,
+        'pace_base_per_runner': 0.28,
+        'pace_noise': 0.2075,
+        'style_bonus': {
+            'nige':    +0.0281,
+            'senkou':  +0.0343,
+            'sashi':   -0.0090,
+            'oikomi':  -0.0474,
+        },
+        'gate_bias': {
+            'inner_senkou': +0.0199,  # 外枠先行有利(1400m特有)
+            'outer_sashi':  -0.0043,
+            'inner_block':  +0.0023,
+        },
+        'trouble_rate': 0.05,
+        'trouble_penalty': 0.15,
+        'noise_scale': 0.02,
+    },
+
+    # --- 中京 芝1400m (データ自動生成: 2023-2025, 376R/5495頭) ---
+    # 直線413m: やや長い。逃げ有利だが差しも届く
+    # 枠順バイアス小さい(内外差なし)
+    'chukyo_turf_1400': {
+        'name': '中京芝1400m',
+        'straight': 413,
+        'pace_base_per_runner': 0.28,
+        'pace_noise': 0.20,
+        'style_bonus': {
+            'nige':    +0.0497,
+            'senkou':  +0.0229,
+            'sashi':   -0.0080,
+            'oikomi':  -0.0411,
+        },
+        'gate_bias': {
+            'inner_senkou': +0.004,
+            'outer_sashi':  -0.002,
+            'inner_block':  +0.001,
+        },
+        'trouble_rate': 0.04,
+        'trouble_penalty': 0.15,
+        'noise_scale': 0.02,
     },
 
     # --- 阪神 芝2000m内回り (忘れな草賞, 大阪杯等) ---
