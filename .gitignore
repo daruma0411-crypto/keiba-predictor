@@ -1,6 +1,7 @@
 # Data files (large binary/pickle)
 data/*.pkl
 data/*.csv
+data/*.log
 
 # Python
 __pycache__/
