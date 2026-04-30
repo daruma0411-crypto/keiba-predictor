@@ -31,6 +31,7 @@ np.random.seed(42)
 from src.predictor_v2 import PredictorV2
 from src.features_v2 import FEATURES_V2, CAT_FEATURES_V2
 from src.qmc_courses import qmc_sim, COURSE_PROFILES, list_courses
+from src.qmc_bias import lookup_bias, apply_bias_to_profile, format_bias_summary, DEFAULT_STRENGTHS
 from src.prompts import build_prompt
 from src.entry_parser import parse_entry_csv, build_race_features
 from src.debate_rules import select_with_rules
@@ -81,6 +82,9 @@ def main():
     parser.add_argument('--cache', default=None, help='特徴量キャッシュパス (省略時は最新を自動選択)')
     parser.add_argument('--sims', type=int, default=100000, help='QMCシミュレーション回数')
     parser.add_argument('--no-debate', action='store_true', help='Layer3ディベートプロンプトをスキップ')
+    parser.add_argument('--no-bias', action='store_true', help='馬場バイアス注入をスキップ')
+    parser.add_argument('--bias-jsonl', default='data/track_bias_parsed.jsonl', help='bias jsonl パス')
+    parser.add_argument('--bias-kind', default='予想', choices=['予想', '結果'], help='bias 取得タイプ')
     args = parser.parse_args()
 
     t_start = time.time()
@@ -152,18 +156,40 @@ def main():
         course_name = COURSE_PROFILES[course]['name']
         straight = COURSE_PROFILES[course]['straight']
         print(f'\n[Step4/Layer2] QMC ({course}, 直線{straight}m, {args.sims:,} sims)...')
-        ps = pred.predict(rf)
-        mc = qmc_sim(ps, race_features=rf, course=course, n=args.sims)
     else:
         print(f'\n[Step4/Layer2] QMC (default profile, {args.sims:,} sims)...')
         print(f'  ⚠ Course profile not found for {race_info["course_key"]}')
         print(f'  Available profiles:')
         list_courses()
-        # デフォルトプロファイルで実行 (桜花賞ベース)
-        ps = pred.predict(rf)
-        mc = qmc_sim(ps, race_features=rf, course='hanshin_turf_1600_outer', n=args.sims)
+        course = 'hanshin_turf_1600_outer'  # デフォルト (桜花賞ベース)
         course_name = f'{race_info["venue"]}{race_info["surface"]}{race_info["distance"]}m (default profile)'
         straight = '?'
+    ps = pred.predict(rf)
+
+    # ----- 馬場バイアス注入 (Phase 4-β) -----
+    bias_used = None
+    course_for_qmc = course
+    if not args.no_bias:
+        bias = lookup_bias(
+            race_info['date_str'], race_info['venue'], race_info['surface'],
+            jsonl_path=args.bias_jsonl, prefer_kind=args.bias_kind,
+        )
+        if bias is not None:
+            print(f'  bias: {format_bias_summary(bias)}')
+            print(f'  strengths: {DEFAULT_STRENGTHS}')
+            bias_used = bias
+            base_prof = COURSE_PROFILES[course]
+            bias_prof = apply_bias_to_profile(base_prof, bias)
+            course_for_qmc = f'__bias_runtime__{course}'
+            COURSE_PROFILES[course_for_qmc] = bias_prof
+        else:
+            print(f'  bias: (該当データなし @ {race_info["date_str"]} {race_info["venue"]} {race_info["surface"]})')
+
+    try:
+        mc = qmc_sim(ps, race_features=rf, course=course_for_qmc, n=args.sims)
+    finally:
+        if course_for_qmc != course:
+            COURSE_PROFILES.pop(course_for_qmc, None)
 
     t3 = time.time()
     print(f'  Done in {t3 - t2:.1f}s')
