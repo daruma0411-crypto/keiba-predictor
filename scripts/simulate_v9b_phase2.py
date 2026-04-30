@@ -211,11 +211,13 @@ def report_block(name, df_a, df_b):
     print(f"\n[{name}]")
     print(out.to_string(index=False, float_format=lambda x: f"{x:.4f}" if pd.notna(x) else "—"))
     if len(out) == 2:
-        d = out.iloc[1] - out.iloc[0]
+        num_cols = ["top5_top3", "top1_hit", "brier", "roi"]
+        d = out[num_cols].iloc[1] - out[num_cols].iloc[0]
+        roi_str = f"{d['roi']:+.4f}" if pd.notna(d["roi"]) else "—"
         print(f"  Delta: top5_top3 {d['top5_top3']:+.4f} | "
               f"top1 {d['top1_hit']:+.4f} | "
               f"brier {d['brier']:+.4f} | "
-              f"roi {d['roi']:+.4f}" if pd.notna(d["roi"]) else "")
+              f"roi {roi_str}")
 
 
 def main():
