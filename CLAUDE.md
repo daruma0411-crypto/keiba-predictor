@@ -49,6 +49,46 @@ mc = qmc_sim(nn_preds, race_features=rf, course='fukushima_turf_1200')
 prompt = build_prompt(race_name=..., mc_results=mc, race_features=rf, nn_preds=nn_preds, ...)
 ```
 
+## 馬場バイアス運用（Phase 4-γ 以降）
+
+`scripts/predict.py` 実行時に `data/track_bias_parsed.jsonl` を自動参照し、対象レースの馬場バイアスを QMC profile に注入する。
+
+### データ更新のタイミング
+
+bias jsonl は `bloodline-trackbias.work` をスクレイプして作成済（2019-05〜2026-04-26）。
+**新しい週末予想を出す前に下記を再実行すること**:
+
+```bash
+py -3.13 scripts/scrape_track_bias.py
+py -3.13 scripts/parse_track_bias.py
+```
+
+### 該当データなし時のフロー
+
+predict.py が `bias: (該当データなし @ ...)` を出力したら:
+1. `bloodline-trackbias.work` のサイトを確認、最新の事前予想記事があるか
+2. あればスクレイプ再実行
+3. **無ければユーザーに馬場情報を口頭で伝えてもらい、jsonl に1行追加**:
+
+```json
+{"date":"2026-05-04","venue":"東京","surface":"芝","kind":"予想",
+ "frame_bias":"内","fb_bias":"前残り","straight_bias":"フラット","time_diff":-2.0}
+```
+
+入力テキストは `src/qmc_bias.py` の `FRAME_MAP` / `FB_MAP` / `STRAIGHT_MAP` のキーワード（「内」「前残り」「外伸び」など）を使うこと。スコア化はパース時に自動。
+
+### 最適 strength（Phase 4-β Optuna 結果）
+
+`src/qmc_bias.py::DEFAULT_STRENGTHS` に記載。検証済みの効果（過去 test set）:
+- BIAS-ACTIVE subset で ROI **+8.74pt**
+- OVERALL で ROI **+6.18pt**
+
+### bias 注入をオフにする
+
+```bash
+py -3.13 scripts/predict.py CSV --no-bias
+```
+
 ## 主要ファイル
 
 | ファイル | 役割 |
@@ -65,6 +105,10 @@ prompt = build_prompt(race_name=..., mc_results=mc, race_features=rf, nn_preds=n
 | `scripts/predict_sakura_2026.py` | 2026年桜花賞予測（特徴量構築+v9b学習+QMC） |
 | `scripts/predict_saturday_g2.py` | 土曜重賞予測（NZT G2 / 阪神牝馬S G2）のサンプル |
 | `scripts/simulate_v9b.py` | バックテスト（2016-2025桜花賞） |
+| `src/qmc_bias.py` | 馬場バイアス注入モジュール（lookup_bias / apply_bias_to_profile） |
+| `scripts/scrape_track_bias.py` | bloodline-trackbias.work スクレイパー |
+| `scripts/parse_track_bias.py` | bias HTML → JSONL パーサー |
+| `scripts/simulate_v9b_phase4_beta.py` | Phase 4-β Optuna 最適化スクリプト |
 
 ## データ
 
