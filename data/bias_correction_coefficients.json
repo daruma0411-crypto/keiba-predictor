@@ -1,0 +1,109 @@
+{
+  "meta": {
+    "source": "features_v9b_2026.pkl",
+    "bias": "track_bias_parsed.jsonl",
+    "n_calibration_rows": 213756,
+    "n_unique_horses": 35284,
+    "note": "avg_jyuni_4c は当該レース jyuni_4c のプロキシ (pkl に当該レース値が無いため)"
+  },
+  "wakuban_x_frame": {
+    "inner|flat": {
+      "correction": 0.1263076352735736,
+      "n": 43963
+    },
+    "inner|inner_fav": {
+      "correction": -1.028061820399277,
+      "n": 106
+    },
+    "inner|outer_fav": {
+      "correction": -0.5845136193776853,
+      "n": 448
+    },
+    "inner|unknown": {
+      "correction": 0.08799870387650967,
+      "n": 683
+    },
+    "middle|flat": {
+      "correction": -0.003376598451358773,
+      "n": 76791
+    },
+    "middle|inner_fav": {
+      "correction": 0.01706374260217014,
+      "n": 176
+    },
+    "middle|outer_fav": {
+      "correction": -0.9874667548533875,
+      "n": 844
+    },
+    "middle|unknown": {
+      "correction": -0.15958741078126037,
+      "n": 1197
+    },
+    "outer|flat": {
+      "correction": -0.0328541548486274,
+      "n": 87008
+    },
+    "outer|inner_fav": {
+      "correction": 0.11839863126877585,
+      "n": 198
+    },
+    "outer|outer_fav": {
+      "correction": -1.0501964404552016,
+      "n": 982
+    },
+    "outer|unknown": {
+      "correction": -0.06982906209510566,
+      "n": 1360
+    }
+  },
+  "jyuni_x_fb": {
+    "back|back_fav": {
+      "correction": -1.020420695352012,
+      "n": 64
+    },
+    "back|flat": {
+      "correction": -0.03278044161434845,
+      "n": 79319
+    },
+    "back|front_fav": {
+      "correction": 0.005634962077728886,
+      "n": 329
+    },
+    "back|unknown": {
+      "correction": 0.10302013434198519,
+      "n": 6070
+    },
+    "front|back_fav": {
+      "correction": -0.5442639654676099,
+      "n": 24
+    },
+    "front|flat": {
+      "correction": -0.3439984183783134,
+      "n": 20213
+    },
+    "front|front_fav": {
+      "correction": -1.0486506423989166,
+      "n": 113
+    },
+    "front|unknown": {
+      "correction": -0.24562655789825177,
+      "n": 1558
+    },
+    "middle|back_fav": {
+      "correction": -0.2961358027124412,
+      "n": 97
+    },
+    "middle|flat": {
+      "correction": 0.08328853892665802,
+      "n": 97790
+    },
+    "middle|front_fav": {
+      "correction": 0.04437213912670562,
+      "n": 475
+    },
+    "middle|unknown": {
+      "correction": 0.17837894104327226,
+      "n": 7694
+    }
+  }
+}
